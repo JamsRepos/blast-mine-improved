@@ -57,8 +57,6 @@ public class StatusOverlay extends Overlay
 
 	private final int[] cachedOreQty = new int[ORE_ITEM_IDS.length];
 	private final BufferedImage[] cachedOreIcons = new BufferedImage[ORE_ITEM_IDS.length];
-	private boolean hudHidden;
-	private Boolean lastHudHidden;
 
 	@Inject
 	private StatusOverlay(
@@ -85,11 +83,11 @@ public class StatusOverlay extends Overlay
 		final Widget blastMineWidget = client.getWidget(InterfaceID.LovakengjBlastMiningHud.DATA);
 		final boolean hudPresent = blastMineWidget != null;
 		final boolean showOre = config.showOreOverlay() && hudPresent;
-		hudHidden = showOre;
-		if (hudPresent && (lastHudHidden == null || lastHudHidden != hudHidden))
+		// Re-apply every frame: the client recreates/unhides this HUD when entering the
+		// mine or enabling the plugin, so a one-shot setHidden is not enough.
+		if (hudPresent)
 		{
-			blastMineWidget.setHidden(hudHidden);
-			lastHudHidden = hudHidden;
+			blastMineWidget.setHidden(config.showOreOverlay());
 		}
 
 		HelperAction action = helperService.getCurrentAction();
@@ -100,11 +98,6 @@ public class StatusOverlay extends Overlay
 
 		if (!showHelper && !showOre)
 		{
-			if (hudPresent && lastHudHidden != null && lastHudHidden)
-			{
-				blastMineWidget.setHidden(false);
-				lastHudHidden = false;
-			}
 			return null;
 		}
 
