@@ -223,6 +223,30 @@ public interface BlastMineImprovedConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "hideOffPathMenus",
+		name = "Hide off-path excavate/place/light",
+		description = "When the helper is guiding a pair, hide Excavate/Place/Light on other walls",
+		section = menuSection,
+		position = 3
+	)
+	default boolean hideOffPathMenus()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "helperIconsOnly",
+		name = "Icons only on helper targets",
+		description = "When the helper is guiding, only show rock icons on the current target (hides all rock icons while depositing/banking)",
+		section = helperSection,
+		position = 5
+	)
+	default boolean helperIconsOnly()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "chatMessages",
 		name = "Dynamite chat messages",
 		description = "Chat messages when running out of or replenishing dynamite",

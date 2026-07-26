@@ -17,6 +17,7 @@ public class HelperAction
 		COLLECT_ORE("Pick up blasted ore"),
 		DEPOSIT_SACK("Deposit ore sack"),
 		BANK_DYNAMITE("Use dynamite on bank chest"),
+		PREP_INVENTORY("Prepare inventory"),
 		COLLECT_OPERATOR("Collect from operator"),
 		WEAR_PROSPECTORS("Wear prospectors before collecting");
 

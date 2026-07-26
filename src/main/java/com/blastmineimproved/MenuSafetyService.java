@@ -1,14 +1,15 @@
 package com.blastmineimproved;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
+import net.runelite.api.GameObject;
 import net.runelite.api.InventoryID;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuEntry;
+import net.runelite.api.Tile;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.gameval.ItemID;
@@ -52,10 +53,23 @@ public class MenuSafetyService
 			entry.setDeprioritized(true);
 		}
 
+		if (config.enableHelper() && config.hideOffPathMenus() && helperService.isFocusingBlastingStep())
+		{
+			if (EXCAVATE.equals(option) || PLACE.equals(option) || LIGHT.equals(option))
+			{
+				WorldPoint point = worldPointForMenuTarget(entry);
+				if (point != null && !helperService.isFocusTile(point))
+				{
+					client.getMenu().removeMenuEntry(entry);
+					return;
+				}
+			}
+		}
+
 		if (config.pairLightSafety() && LIGHT.equals(option) && isLoadedPot(event.getIdentifier()))
 		{
 			WorldPoint point = worldPointForMenuTarget(entry);
-			if (point != null && !partnerAlsoLoaded(point, rocks))
+			if (point != null && !bothPotsLoaded(point, rocks))
 			{
 				client.getMenu().removeMenuEntry(entry);
 			}
@@ -93,6 +107,9 @@ public class MenuSafetyService
 			case BANK_DYNAMITE:
 				match = "Use".equals(option);
 				break;
+			case PREP_INVENTORY:
+				match = "Use".equals(option) || DEPOSIT.equals(option);
+				break;
 			case COLLECT_OPERATOR:
 			case WEAR_PROSPECTORS:
 				match = "Talk-to".equals(option) || "Collect".equals(option);
@@ -107,31 +124,89 @@ public class MenuSafetyService
 		}
 	}
 
-	private boolean partnerAlsoLoaded(WorldPoint point, Map<WorldPoint, BlastMineRock> rocks)
+	/**
+	 * Allow Light when both cavities are ready: each is LOADED or already LIT.
+	 * Hides Light until the partner pot is placed; keeps Light available on the
+	 * second pot after the first has been lit.
+	 */
+	private boolean bothPotsLoaded(WorldPoint point, Map<WorldPoint, BlastMineRock> rocks)
 	{
-		NortheastSite site = NortheastSite.nearestTo(point);
+		NortheastSite site = NortheastSite.forWallTile(point);
+		if (site == null)
+		{
+			site = NortheastSite.nearestTo(point);
+		}
 		if (site == null)
 		{
 			return true;
 		}
 
-		List<BlastMineRock> partners = new ArrayList<>();
-		for (Map.Entry<WorldPoint, BlastMineRock> e : rocks.entrySet())
+		return isLoadedOrLitAt(site.getWallA(), rocks) && isLoadedOrLitAt(site.getWallB(), rocks);
+	}
+
+	private boolean isLoadedOrLitAt(WorldPoint wall, Map<WorldPoint, BlastMineRock> rocks)
+	{
+		BlastMineRock tracked = rocks.get(wall);
+		if (tracked != null
+			&& (tracked.getType() == BlastMineRockType.LOADED || tracked.getType() == BlastMineRockType.LIT))
 		{
-			if (NortheastSite.nearestTo(e.getKey()) == site)
+			return true;
+		}
+
+		for (Map.Entry<WorldPoint, BlastMineRock> entry : rocks.entrySet())
+		{
+			BlastMineRockType type = entry.getValue().getType();
+			if (type != BlastMineRockType.LOADED && type != BlastMineRockType.LIT)
 			{
-				partners.add(e.getValue());
+				continue;
+			}
+			WorldPoint loc = entry.getKey();
+			if (wall.equals(loc) || wall.distanceTo(loc) == 0)
+			{
+				return true;
 			}
 		}
 
-		if (partners.size() < 2)
+		return sceneHasLoadedOrLitPot(wall);
+	}
+
+	private boolean sceneHasLoadedOrLitPot(WorldPoint wall)
+	{
+		LocalPoint local = LocalPoint.fromWorld(client, wall);
+		if (local == null)
 		{
-			// Single tracked rock at site — allow light if this one is loaded
-			return partners.stream().anyMatch(r -> r.getType() == BlastMineRockType.LOADED);
+			return false;
 		}
 
-		long loaded = partners.stream().filter(r -> r.getType() == BlastMineRockType.LOADED).count();
-		return loaded >= 2;
+		Tile[][][] tiles = client.getScene().getTiles();
+		int plane = client.getPlane();
+		int x = local.getSceneX();
+		int y = local.getSceneY();
+		if (x < 0 || y < 0 || plane < 0 || plane >= tiles.length
+			|| x >= tiles[plane].length || y >= tiles[plane][x].length)
+		{
+			return false;
+		}
+
+		Tile tile = tiles[plane][x][y];
+		if (tile == null)
+		{
+			return false;
+		}
+
+		GameObject[] objects = tile.getGameObjects();
+		if (objects != null)
+		{
+			for (GameObject go : objects)
+			{
+				if (go != null && (isLoadedPot(go.getId()) || isLitPot(go.getId())))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	private WorldPoint worldPointForMenuTarget(MenuEntry entry)
@@ -153,5 +228,10 @@ public class MenuSafetyService
 	private static boolean isLoadedPot(int id)
 	{
 		return id == ObjectID.BLAST_MINING_WALL_POT_01 || id == ObjectID.BLAST_MINING_WALL_POT_02;
+	}
+
+	private static boolean isLitPot(int id)
+	{
+		return id == ObjectID.BLAST_MINING_WALL_BURNING_01 || id == ObjectID.BLAST_MINING_WALL_BURNING_02;
 	}
 }

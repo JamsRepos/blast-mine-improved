@@ -1,10 +1,9 @@
 package com.blastmineimproved;
 
-import com.blastmineimproved.overlay.HelperPanelOverlay;
 import com.blastmineimproved.overlay.InventoryOreTimerOverlay;
 import com.blastmineimproved.overlay.NextClickOverlay;
-import com.blastmineimproved.overlay.OreHudOverlay;
 import com.blastmineimproved.overlay.RockOverlay;
+import com.blastmineimproved.overlay.StatusOverlay;
 import com.google.inject.Provides;
 import java.util.HashMap;
 import java.util.Map;
@@ -24,6 +23,9 @@ import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ItemDespawned;
+import net.runelite.api.events.ItemQuantityChanged;
+import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.ItemID;
@@ -66,10 +68,7 @@ public class BlastMineImprovedPlugin extends Plugin
 	private RockOverlay rockOverlay;
 
 	@Inject
-	private OreHudOverlay oreHudOverlay;
-
-	@Inject
-	private HelperPanelOverlay helperPanelOverlay;
+	private StatusOverlay statusOverlay;
 
 	@Inject
 	private NextClickOverlay nextClickOverlay;
@@ -86,6 +85,9 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Inject
 	private BlastedOreTracker oreTracker;
 
+	@Inject
+	private GroundOreTracker groundOreTracker;
+
 	private boolean properLogged;
 	private boolean hadDynamite;
 	private ItemContainer previousInventory;
@@ -93,9 +95,9 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		helperService.resetRotation();
 		overlayManager.add(rockOverlay);
-		overlayManager.add(oreHudOverlay);
-		overlayManager.add(helperPanelOverlay);
+		overlayManager.add(statusOverlay);
 		overlayManager.add(nextClickOverlay);
 		overlayManager.add(inventoryOreTimerOverlay);
 		log.debug("Blast Mine Improved started");
@@ -105,12 +107,13 @@ public class BlastMineImprovedPlugin extends Plugin
 	protected void shutDown()
 	{
 		overlayManager.remove(rockOverlay);
-		overlayManager.remove(oreHudOverlay);
-		overlayManager.remove(helperPanelOverlay);
+		overlayManager.remove(statusOverlay);
 		overlayManager.remove(nextClickOverlay);
 		overlayManager.remove(inventoryOreTimerOverlay);
 		rocks.clear();
 		oreTracker.reset();
+		groundOreTracker.reset();
+		helperService.resetRotation();
 
 		final Widget blastMineWidget = client.getWidget(InterfaceID.LovakengjBlastMiningHud.DATA);
 		if (blastMineWidget != null)
@@ -144,6 +147,8 @@ public class BlastMineImprovedPlugin extends Plugin
 		{
 			rocks.clear();
 			oreTracker.reset();
+			groundOreTracker.reset();
+			helperService.resetRotation();
 		}
 
 		if (event.getGameState() == GameState.LOGGED_IN)
@@ -178,6 +183,27 @@ public class BlastMineImprovedPlugin extends Plugin
 		oreTracker.syncFromInventory();
 		helperService.update(rocks);
 		checkDynamiteTransitions();
+	}
+
+	@Subscribe
+	public void onItemSpawned(ItemSpawned event)
+	{
+		groundOreTracker.onItemSpawned(event.getTile().getWorldLocation(), event.getItem());
+	}
+
+	@Subscribe
+	public void onItemDespawned(ItemDespawned event)
+	{
+		groundOreTracker.onItemDespawned(event.getTile().getWorldLocation(), event.getItem());
+	}
+
+	@Subscribe
+	public void onItemQuantityChanged(ItemQuantityChanged event)
+	{
+		groundOreTracker.onItemQuantityChanged(
+			event.getTile().getWorldLocation(),
+			event.getItem(),
+			event.getOldQuantity());
 	}
 
 	@Subscribe

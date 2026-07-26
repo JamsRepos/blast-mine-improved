@@ -3,6 +3,7 @@ package com.blastmineimproved.overlay;
 import com.blastmineimproved.BlastMineImprovedConfig;
 import com.blastmineimproved.BlastMineImprovedPlugin;
 import com.blastmineimproved.BlastMineRock;
+import com.blastmineimproved.HelperService;
 import com.google.common.collect.ImmutableSet;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -17,6 +18,7 @@ import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.Tile;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
 import net.runelite.client.game.ItemManager;
@@ -44,18 +46,25 @@ public class RockOverlay extends Overlay
 	private final Client client;
 	private final BlastMineImprovedPlugin plugin;
 	private final BlastMineImprovedConfig config;
+	private final HelperService helperService;
 	private final BufferedImage chiselIcon;
 	private final BufferedImage dynamiteIcon;
 	private final BufferedImage tinderboxIcon;
 
 	@Inject
-	private RockOverlay(Client client, BlastMineImprovedPlugin plugin, BlastMineImprovedConfig config, ItemManager itemManager)
+	private RockOverlay(
+		Client client,
+		BlastMineImprovedPlugin plugin,
+		BlastMineImprovedConfig config,
+		HelperService helperService,
+		ItemManager itemManager)
 	{
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
+		this.helperService = helperService;
 		chiselIcon = itemManager.getImage(ItemID.CHISEL);
 		dynamiteIcon = itemManager.getImage(ItemID.LOVAKENGJ_DYNAMITE_FUSED);
 		tinderboxIcon = itemManager.getImage(ItemID.TINDERBOX);
@@ -64,18 +73,28 @@ public class RockOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		Map<net.runelite.api.coords.WorldPoint, BlastMineRock> rocks = plugin.getRocks();
+		Map<WorldPoint, BlastMineRock> rocks = plugin.getRocks();
 		if (rocks.isEmpty() || client.getLocalPlayer() == null)
 		{
 			return null;
 		}
 
+		final WorldPoint playerTile = client.getLocalPlayer().getWorldLocation();
 		final Tile[][][] tiles = client.getScene().getTiles();
+
+		// Resolve icon policy once per frame — no per-rock config/service thrash.
+		final boolean helperIconFilter = config.enableHelper() && config.helperIconsOnly()
+			&& helperService.shouldHideOffPathRockIcons();
+		final boolean iconsOnFocusOnly = helperIconFilter && helperService.restrictRockIconsToFocusTiles();
+		final boolean drawActionIcons = config.showRockIconOverlay();
+		final boolean drawTimers = config.showTimerOverlay();
+		final boolean drawWarnings = config.showWarningOverlay();
 
 		for (final BlastMineRock rock : rocks.values())
 		{
+			WorldPoint rockTile = rock.getGameObject().getWorldLocation();
 			if (rock.getGameObject().getCanvasLocation() == null
-				|| rock.getGameObject().getWorldLocation().distanceTo(client.getLocalPlayer().getWorldLocation()) > MAX_DISTANCE)
+				|| rockTile.distanceTo(playerTile) > MAX_DISTANCE)
 			{
 				continue;
 			}
@@ -83,17 +102,32 @@ public class RockOverlay extends Overlay
 			switch (rock.getType())
 			{
 				case NORMAL:
-					drawIconOnRock(graphics, rock, chiselIcon);
+					if (drawActionIcons && shouldDrawActionIcon(helperIconFilter, iconsOnFocusOnly, rockTile))
+					{
+						drawIconOnRock(graphics, rock, chiselIcon);
+					}
 					break;
 				case CHISELED:
-					drawIconOnRock(graphics, rock, dynamiteIcon);
+					if (drawActionIcons && shouldDrawActionIcon(helperIconFilter, iconsOnFocusOnly, rockTile))
+					{
+						drawIconOnRock(graphics, rock, dynamiteIcon);
+					}
 					break;
 				case LOADED:
-					drawIconOnRock(graphics, rock, tinderboxIcon);
+					if (drawActionIcons && shouldDrawActionIcon(helperIconFilter, iconsOnFocusOnly, rockTile))
+					{
+						drawIconOnRock(graphics, rock, tinderboxIcon);
+					}
 					break;
 				case LIT:
-					drawTimerOnRock(graphics, rock, config.getTimerColor());
-					drawAreaWarning(graphics, rock, config.getWarningColor(), tiles);
+					if (drawTimers)
+					{
+						drawTimerOnRock(graphics, rock, config.getTimerColor());
+					}
+					if (drawWarnings)
+					{
+						drawAreaWarning(graphics, rock, config.getWarningColor(), tiles);
+					}
 					break;
 				default:
 					break;
@@ -103,13 +137,25 @@ public class RockOverlay extends Overlay
 		return null;
 	}
 
+	/**
+	 * Deposit/bank/prep: hide all action icons. Excavate/place/light: only focus tiles.
+	 * Skipping draws is cheap; we never allocate or toggle overlay registration per icon.
+	 */
+	private boolean shouldDrawActionIcon(boolean helperIconFilter, boolean iconsOnFocusOnly, WorldPoint rockTile)
+	{
+		if (!helperIconFilter)
+		{
+			return true;
+		}
+		if (!iconsOnFocusOnly)
+		{
+			return false;
+		}
+		return helperService.isFocusTile(rockTile);
+	}
+
 	private void drawIconOnRock(Graphics2D graphics, BlastMineRock rock, BufferedImage icon)
 	{
-		if (!config.showRockIconOverlay())
-		{
-			return;
-		}
-
 		Point loc = Perspective.getCanvasImageLocation(client, rock.getGameObject().getLocalLocation(), icon, 150);
 		if (loc != null)
 		{
@@ -119,11 +165,6 @@ public class RockOverlay extends Overlay
 
 	private void drawTimerOnRock(Graphics2D graphics, BlastMineRock rock, Color color)
 	{
-		if (!config.showTimerOverlay())
-		{
-			return;
-		}
-
 		Point loc = Perspective.localToCanvas(client, rock.getGameObject().getLocalLocation(), rock.getGameObject().getPlane(), 150);
 		if (loc != null)
 		{
@@ -139,11 +180,6 @@ public class RockOverlay extends Overlay
 
 	private void drawAreaWarning(Graphics2D graphics, BlastMineRock rock, Color color, Tile[][][] tiles)
 	{
-		if (!config.showWarningOverlay())
-		{
-			return;
-		}
-
 		final int z = client.getPlane();
 		int x = rock.getGameObject().getLocalLocation().getX() / Perspective.LOCAL_TILE_SIZE;
 		int y = rock.getGameObject().getLocalLocation().getY() / Perspective.LOCAL_TILE_SIZE;
