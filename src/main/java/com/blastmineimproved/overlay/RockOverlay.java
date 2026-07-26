@@ -3,7 +3,6 @@ package com.blastmineimproved.overlay;
 import com.blastmineimproved.BlastMineImprovedConfig;
 import com.blastmineimproved.BlastMineImprovedPlugin;
 import com.blastmineimproved.BlastMineRock;
-import com.blastmineimproved.BlastMineRockType;
 import com.google.common.collect.ImmutableSet;
 import java.awt.Color;
 import java.awt.Dimension;
