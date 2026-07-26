@@ -38,7 +38,12 @@ Inventory prep before starting: chisel, tinderbox, noted dynamite, 5 placeholder
 Blasted ore disintegrates after **3 minutes**. Each inventory slot shows a progress pie so you know when to deposit.
 
 ### Dynamite alerts
-Chat + optional sound when you run out of or replenish unnoted dynamite (ported from [blast-mine-dynamite-restriction](https://github.com/Fabletownn/blast-mine-dynamite-restriction)).
+Chat + optional sound when you run out of or replenish unnoted dynamite.
+
+## Credits
+
+- [Blast Mine Dynamite Restriction](https://github.com/Fabletownn/blast-mine-dynamite-restriction) by Fabletownn — dynamite chat/sound alerts, excavate deprioritization without dynamite, and related menu-safety ideas were adapted from that plugin (this plugin conflicts with it so only one runs at a time).
+- Built-in RuneLite **Blast Mine** — rock icons, fuse timers, and explosion warnings are reimplemented here as the replacement overlay set.
 
 ## Development
 
