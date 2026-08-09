@@ -213,7 +213,8 @@ public class BlastMineImprovedPlugin extends Plugin
 		if (inventory != null && event.getItemContainer() == inventory)
 		{
 			previousInventory = inventory;
-			oreTracker.syncFromInventory();
+			// Ore-timer sync runs on the game tick, after ground ItemDespawned events have queued
+			// their spawn times — syncing here could race ahead of them and lose the floor time.
 		}
 	}
 

@@ -1,9 +1,11 @@
 package com.blastmineimproved;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Getter;
 import net.runelite.api.Tile;
@@ -13,6 +15,10 @@ import net.runelite.api.gameval.ItemID;
 
 /**
  * Tracks blasted ore sitting on the ground (picked up on the next pass, or when dynamite is gone).
+ *
+ * <p>Also records when each pile first spawned so the inventory disintegration timer can start from
+ * ground-spawn time rather than pickup time; on pickup the spawn time is handed to
+ * {@link BlastedOreTracker}.
  */
 @Singleton
 public class GroundOreTracker
@@ -20,9 +26,21 @@ public class GroundOreTracker
 	@Getter
 	private final Map<WorldPoint, Integer> oreByTile = new HashMap<>();
 
+	/** Oldest ground-spawn time still present on each tile. */
+	private final Map<WorldPoint, Instant> spawnedAt = new HashMap<>();
+
+	private final BlastedOreTracker blastedOreTracker;
+
+	@Inject
+	GroundOreTracker(BlastedOreTracker blastedOreTracker)
+	{
+		this.blastedOreTracker = blastedOreTracker;
+	}
+
 	public void reset()
 	{
 		oreByTile.clear();
+		spawnedAt.clear();
 	}
 
 	public void onItemSpawned(WorldPoint point, TileItem item)
@@ -32,6 +50,7 @@ public class GroundOreTracker
 			return;
 		}
 		oreByTile.merge(point, Math.max(1, item.getQuantity()), Integer::sum);
+		spawnedAt.putIfAbsent(point, Instant.now());
 	}
 
 	public void onItemDespawned(WorldPoint point, TileItem item)
@@ -46,9 +65,12 @@ public class GroundOreTracker
 		{
 			return;
 		}
+		int removed = Math.min(qty, remaining);
+		blastedOreTracker.onGroundOrePickedUp(spawnedAt.get(point), removed);
 		if (remaining <= qty)
 		{
 			oreByTile.remove(point);
+			spawnedAt.remove(point);
 		}
 		else
 		{
@@ -66,6 +88,7 @@ public class GroundOreTracker
 		if (delta > 0)
 		{
 			oreByTile.merge(point, delta, Integer::sum);
+			spawnedAt.putIfAbsent(point, Instant.now());
 		}
 		else if (delta < 0)
 		{
@@ -74,10 +97,13 @@ public class GroundOreTracker
 			{
 				return;
 			}
+			int removed = Math.min(-delta, remaining);
+			blastedOreTracker.onGroundOrePickedUp(spawnedAt.get(point), removed);
 			int next = remaining + delta;
 			if (next <= 0)
 			{
 				oreByTile.remove(point);
+				spawnedAt.remove(point);
 			}
 			else
 			{

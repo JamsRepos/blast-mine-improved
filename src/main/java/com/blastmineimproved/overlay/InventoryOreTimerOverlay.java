@@ -33,16 +33,7 @@ public class InventoryOreTimerOverlay extends WidgetItemOverlay
 			return;
 		}
 
-		BlastedOreTracker.OreTimer matched = null;
-		for (BlastedOreTracker.OreTimer timer : oreTracker.timersForInventorySlots())
-		{
-			if (timer.getSlot() == widgetItem.getWidget().getIndex())
-			{
-				matched = timer;
-				break;
-			}
-		}
-
+		BlastedOreTracker.OreTimer matched = oreTracker.timerForSlot(widgetItem.getWidget().getIndex());
 		if (matched == null)
 		{
 			return;

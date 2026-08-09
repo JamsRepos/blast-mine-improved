@@ -3,38 +3,46 @@ package com.blastmineimproved;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.gameval.ItemID;
 
+/**
+ * Tracks the 3-minute disintegration timer of blasted ore held in the inventory.
+ *
+ * <p>The lifetime starts when the ore spawns on the ground, so pickup times are seeded from
+ * {@link GroundOreTracker} rather than the moment the ore enters the inventory. Timers are keyed
+ * by inventory slot and reassigned when ore is moved between slots.
+ */
 @Singleton
 public class BlastedOreTracker
 {
 	public static final Duration ORE_LIFETIME = Duration.ofMinutes(3);
+	private static final int INVENTORY_SIZE = 28;
 
-	@Getter
 	public static final class OreTimer
 	{
-		private final Instant acquiredAt;
-		private final int slot;
+		private final Instant spawnedAt;
 
-		OreTimer(Instant acquiredAt, int slot)
+		OreTimer(Instant spawnedAt)
 		{
-			this.acquiredAt = acquiredAt;
-			this.slot = slot;
+			this.spawnedAt = spawnedAt;
 		}
 
 		public Duration remaining()
 		{
-			Duration elapsed = Duration.between(acquiredAt, Instant.now());
-			Duration left = ORE_LIFETIME.minus(elapsed);
+			Duration left = ORE_LIFETIME.minus(Duration.between(spawnedAt, Instant.now()));
 			return left.isNegative() ? Duration.ZERO : left;
 		}
 
@@ -45,8 +53,12 @@ public class BlastedOreTracker
 	}
 
 	private final Client client;
-	private final Deque<Instant> acquisitionTimes = new ArrayDeque<>();
-	private int lastOreCount;
+
+	/** Inventory slot index -> ground spawn time of the ore currently in that slot. */
+	private final Map<Integer, Instant> timersBySlot = new HashMap<>();
+
+	/** Ground spawn times of ore that left the ground this tick (pickup candidates). */
+	private final Deque<Instant> pendingPickups = new ArrayDeque<>();
 
 	@Inject
 	BlastedOreTracker(Client client)
@@ -56,97 +68,92 @@ public class BlastedOreTracker
 
 	public void reset()
 	{
-		acquisitionTimes.clear();
-		lastOreCount = 0;
+		timersBySlot.clear();
+		pendingPickups.clear();
+	}
+
+	/**
+	 * Record that blasted ore left the ground this tick, carrying its original spawn time so the
+	 * timer that follows it into the inventory reflects floor time already elapsed.
+	 */
+	public void onGroundOrePickedUp(Instant spawnedAt, int quantity)
+	{
+		Instant time = spawnedAt != null ? spawnedAt : Instant.now();
+		for (int i = 0; i < quantity; i++)
+		{
+			pendingPickups.addLast(time);
+		}
 	}
 
 	public void syncFromInventory()
 	{
 		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
-		int count = countBlastedOre(inventory);
-
-		if (count > lastOreCount)
-		{
-			int gained = count - lastOreCount;
-			Instant now = Instant.now();
-			for (int i = 0; i < gained; i++)
-			{
-				acquisitionTimes.addLast(now);
-			}
-		}
-		else if (count < lastOreCount)
-		{
-			int lost = lastOreCount - count;
-			for (int i = 0; i < lost && !acquisitionTimes.isEmpty(); i++)
-			{
-				acquisitionTimes.removeFirst();
-			}
-		}
-
-		lastOreCount = count;
-		while (acquisitionTimes.size() > count)
-		{
-			acquisitionTimes.removeFirst();
-		}
-	}
-
-	public Deque<OreTimer> timersForInventorySlots()
-	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
-		Deque<OreTimer> timers = new ArrayDeque<>();
 		if (inventory == null)
 		{
-			return timers;
+			timersBySlot.clear();
+			pendingPickups.clear();
+			return;
 		}
 
-		Iterator<Instant> times = acquisitionTimes.iterator();
-		Item[] items = inventory.getItems();
-		for (int slot = 0; slot < items.length; slot++)
+		final Item[] items = inventory.getItems();
+		final int limit = Math.min(items.length, INVENTORY_SIZE);
+
+		final boolean[] isOreSlot = new boolean[INVENTORY_SIZE];
+		for (int slot = 0; slot < limit; slot++)
 		{
 			Item item = items[slot];
-			if (item == null || item.getId() != ItemID.LOVAKENGJ_BLASTED_ORE)
-			{
-				continue;
-			}
-			if (!times.hasNext())
-			{
-				break;
-			}
-			timers.add(new OreTimer(times.next(), slot));
+			isOreSlot[slot] = item != null && item.getId() == ItemID.LOVAKENGJ_BLASTED_ORE;
 		}
-		return timers;
+
+		// Free timers from slots that no longer hold ore (deposited, disintegrated, or moved out).
+		final List<Instant> freedTimers = new ArrayList<>();
+		for (Iterator<Map.Entry<Integer, Instant>> it = timersBySlot.entrySet().iterator(); it.hasNext(); )
+		{
+			Map.Entry<Integer, Instant> entry = it.next();
+			int slot = entry.getKey();
+			if (slot >= INVENTORY_SIZE || !isOreSlot[slot])
+			{
+				freedTimers.add(entry.getValue());
+				it.remove();
+			}
+		}
+
+		// Slots that now hold ore but have no timer yet (picked up or moved in).
+		final List<Integer> gainedSlots = new ArrayList<>();
+		for (int slot = 0; slot < limit; slot++)
+		{
+			if (isOreSlot[slot] && !timersBySlot.containsKey(slot))
+			{
+				gainedSlots.add(slot);
+			}
+		}
+
+		if (!gainedSlots.isEmpty())
+		{
+			// Assign moved-ore times first (oldest first), then fresh ground pickups from this tick.
+			freedTimers.sort(Comparator.naturalOrder());
+			final Deque<Instant> available = new ArrayDeque<>(freedTimers);
+			available.addAll(pendingPickups);
+
+			for (int slot : gainedSlots)
+			{
+				Instant time = available.pollFirst();
+				timersBySlot.put(slot, time != null ? time : Instant.now());
+			}
+		}
+
+		// Pending pickups are only valid for the tick in which the ground ore despawned.
+		pendingPickups.clear();
 	}
 
-	public Duration oldestRemaining()
+	public OreTimer timerForSlot(int slot)
 	{
-		if (acquisitionTimes.isEmpty())
-		{
-			return null;
-		}
-		Duration elapsed = Duration.between(acquisitionTimes.peekFirst(), Instant.now());
-		Duration left = ORE_LIFETIME.minus(elapsed);
-		return left.isNegative() ? Duration.ZERO : left;
+		Instant spawnedAt = timersBySlot.get(slot);
+		return spawnedAt != null ? new OreTimer(spawnedAt) : null;
 	}
 
 	public int getOreCount()
 	{
-		return lastOreCount;
-	}
-
-	private static int countBlastedOre(ItemContainer inventory)
-	{
-		if (inventory == null)
-		{
-			return 0;
-		}
-		int count = 0;
-		for (Item item : inventory.getItems())
-		{
-			if (item != null && item.getId() == ItemID.LOVAKENGJ_BLASTED_ORE)
-			{
-				count += Math.max(1, item.getQuantity());
-			}
-		}
-		return count;
+		return timersBySlot.size();
 	}
 }
