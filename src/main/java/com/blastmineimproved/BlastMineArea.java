@@ -6,6 +6,9 @@ import net.runelite.api.coords.WorldPoint;
 
 final class BlastMineArea
 {
+	/** Lovakengj Blast Mine. Shared with {@link NortheastSite} markers. */
+	static final int REGION_ID = 5948;
+
 	private BlastMineArea()
 	{
 	}
@@ -19,7 +22,6 @@ final class BlastMineArea
 
 		LocalPoint local = client.getLocalPlayer().getLocalLocation();
 		WorldPoint world = WorldPoint.fromLocalInstance(client, local);
-		return world.getX() >= 1465 && world.getX() <= 1515
-			&& world.getY() >= 3840 && world.getY() <= 3890;
+		return world.getRegionID() == REGION_ID;
 	}
 }

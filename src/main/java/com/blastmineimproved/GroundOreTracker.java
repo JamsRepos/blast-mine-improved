@@ -8,7 +8,6 @@ import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Getter;
-import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.ItemID;
@@ -166,35 +165,5 @@ public class GroundOreTracker
 			}
 		}
 		return tiles;
-	}
-
-	/** Resync from a tile's ground items (optional safety). */
-	public void syncTile(Tile tile)
-	{
-		if (tile == null)
-		{
-			return;
-		}
-		WorldPoint point = tile.getWorldLocation();
-		int count = 0;
-		List<TileItem> items = tile.getGroundItems();
-		if (items != null)
-		{
-			for (TileItem item : items)
-			{
-				if (item.getId() == ItemID.LOVAKENGJ_BLASTED_ORE)
-				{
-					count += Math.max(1, item.getQuantity());
-				}
-			}
-		}
-		if (count > 0)
-		{
-			oreByTile.put(point, count);
-		}
-		else
-		{
-			oreByTile.remove(point);
-		}
 	}
 }

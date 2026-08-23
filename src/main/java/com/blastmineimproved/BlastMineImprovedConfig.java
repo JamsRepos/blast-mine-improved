@@ -8,9 +8,12 @@ import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Range;
 
-@ConfigGroup("blastmineimproved")
+@ConfigGroup(BlastMineImprovedConfig.GROUP)
 public interface BlastMineImprovedConfig extends Config
 {
+	String GROUP = "blastmineimproved";
+	String SEEN_CHANGELOG_VERSION_KEY = "seenChangelogVersion";
+
 	@ConfigSection(
 		name = "Overlays",
 		description = "Visual overlays for Blast Mine",
@@ -138,11 +141,48 @@ public interface BlastMineImprovedConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "rotationMethod",
+		name = "Rotation method",
+		description = "Loot as you go picks up as you blast (default). Blast then loot fires everything first, then loots — usually 21 dynamite per trip.",
+		section = helperSection,
+		position = 1
+	)
+	default RotationMethod rotationMethod()
+	{
+		return RotationMethod.LOOT_AS_YOU_GO;
+	}
+
+	@ConfigItem(
+		keyName = "guideOrePickup",
+		name = "Guide ore pickups",
+		description = "Turn off if you pick up ore yourself (area loot, etc.). The helper will skip collect steps.",
+		section = helperSection,
+		position = 2
+	)
+	default boolean guideOrePickup()
+	{
+		return true;
+	}
+
+	@Range(min = 8, max = 28)
+	@ConfigItem(
+		keyName = "dynamitePerTrip",
+		name = "Dynamite per trip",
+		description = "How many unnoted dynamite to use each trip. 20 is the usual loot-as-you-go amount; 21 is typical for blast then loot. Extra inventory slots are filled automatically.",
+		section = helperSection,
+		position = 3
+	)
+	default int dynamitePerTrip()
+	{
+		return 20;
+	}
+
+	@ConfigItem(
 		keyName = "highlightNextClick",
 		name = "Highlight next click",
 		description = "Highlight the tile/object for the recommended next action",
 		section = helperSection,
-		position = 1
+		position = 4
 	)
 	default boolean highlightNextClick()
 	{
@@ -154,7 +194,7 @@ public interface BlastMineImprovedConfig extends Config
 		name = "Show helper panel",
 		description = "Show a panel with the current recommended action",
 		section = helperSection,
-		position = 2
+		position = 5
 	)
 	default boolean showHelperPanel()
 	{
@@ -167,7 +207,7 @@ public interface BlastMineImprovedConfig extends Config
 		name = "Low dynamite threshold",
 		description = "Prompt banking when unnoted dynamite drops to this amount",
 		section = helperSection,
-		position = 3
+		position = 6
 	)
 	default int lowDynamiteThreshold()
 	{
@@ -179,7 +219,7 @@ public interface BlastMineImprovedConfig extends Config
 		name = "Estimate with prospectors",
 		description = "Apply full prospector kit (+2.5%) to estimated sack XP",
 		section = helperSection,
-		position = 4
+		position = 7
 	)
 	default boolean assumeProspectors()
 	{
@@ -187,9 +227,21 @@ public interface BlastMineImprovedConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "helperIconsOnly",
+		name = "Icons only on helper targets",
+		description = "Only show rock icons on the helper's current target. Icons hide while depositing or banking.",
+		section = helperSection,
+		position = 8
+	)
+	default boolean helperIconsOnly()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "deprioritizeWithoutDynamite",
 		name = "Deprioritize excavate without dynamite",
-		description = "Make Excavate right-click only when you have no unnoted dynamite",
+		description = "Makes Excavate right-click only when you have no dynamite left. Light on a loaded pot is left alone.",
 		section = menuSection,
 		position = 0
 	)
@@ -201,7 +253,7 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = "pairLightSafety",
 		name = "Paired Light safety",
-		description = "Hide Light on a pot unless its pair partner is also ready to light",
+		description = "Hides Light until both pots of a pair are ready. A leftover pot can still be lit when you run out of dynamite.",
 		section = menuSection,
 		position = 1
 	)
@@ -213,7 +265,7 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = "prioritizeHelperOptions",
 		name = "Left-click helper options",
-		description = "Prefer the recommended action as the left-click option when available",
+		description = "Left-click the helper's recommended action on the highlighted tiles.",
 		section = menuSection,
 		position = 2
 	)
@@ -225,23 +277,11 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = "hideOffPathMenus",
 		name = "Hide off-path excavate/place/light",
-		description = "When the helper is guiding a pair, hide Excavate/Place/Light on other walls",
+		description = "Hides Excavate, Place, and Light on walls that aren't the current pair.",
 		section = menuSection,
 		position = 3
 	)
 	default boolean hideOffPathMenus()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "helperIconsOnly",
-		name = "Icons only on helper targets",
-		description = "When the helper is guiding, only show rock icons on the current target (hides all rock icons while depositing/banking)",
-		section = helperSection,
-		position = 5
-	)
-	default boolean helperIconsOnly()
 	{
 		return true;
 	}
@@ -294,6 +334,17 @@ public interface BlastMineImprovedConfig extends Config
 	default int soundVolume()
 	{
 		return 64;
+	}
+
+	@ConfigItem(
+		keyName = SEEN_CHANGELOG_VERSION_KEY,
+		name = "Seen changelog version",
+		description = "Last Blast Mine Improved version whose update notes were shown in chat.",
+		hidden = true
+	)
+	default String seenChangelogVersion()
+	{
+		return "";
 	}
 
 	enum MessagesEnabledType

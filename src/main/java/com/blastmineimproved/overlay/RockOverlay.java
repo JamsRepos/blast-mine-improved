@@ -50,6 +50,7 @@ public class RockOverlay extends Overlay
 	private final BufferedImage chiselIcon;
 	private final BufferedImage dynamiteIcon;
 	private final BufferedImage tinderboxIcon;
+	private final ProgressPieComponent fusePie = new ProgressPieComponent();
 
 	@Inject
 	private RockOverlay(
@@ -169,12 +170,11 @@ public class RockOverlay extends Overlay
 		if (loc != null)
 		{
 			final double timeLeft = 1 - rock.getRemainingFuseTimeRelative();
-			final ProgressPieComponent pie = new ProgressPieComponent();
-			pie.setFill(color);
-			pie.setBorderColor(color);
-			pie.setPosition(loc);
-			pie.setProgress(timeLeft);
-			pie.render(graphics);
+			fusePie.setFill(color);
+			fusePie.setBorderColor(color);
+			fusePie.setPosition(loc);
+			fusePie.setProgress(timeLeft);
+			fusePie.render(graphics);
 		}
 	}
 

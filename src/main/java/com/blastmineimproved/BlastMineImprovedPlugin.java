@@ -7,8 +7,6 @@ import com.blastmineimproved.overlay.StatusOverlay;
 import com.google.inject.Provides;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 import javax.inject.Inject;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -16,9 +14,9 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
-import net.runelite.api.InventoryID;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -28,11 +26,13 @@ import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -48,6 +48,8 @@ public class BlastMineImprovedPlugin extends Plugin
 {
 	private static final String NO_DYNAMITE_MSG = "That was the last of your dynamite! You can no longer load cavities.";
 	private static final String REPLENISH_DYNAMITE_MSG = "You have dynamite and can load chiseled cavities once more.";
+	/** ~3s at 600ms/tick — avoids a daemon Timer so login inventory sync cannot leak a thread. */
+	private static final int LOGIN_GRACE_TICKS = 5;
 
 	@Getter
 	private final Map<WorldPoint, BlastMineRock> rocks = new HashMap<>();
@@ -88,7 +90,11 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Inject
 	private GroundOreTracker groundOreTracker;
 
+	@Inject
+	private ChangelogService changelogService;
+
 	private boolean properLogged;
+	private int loginGraceTicks;
 	private boolean hadDynamite;
 	private ItemContainer previousInventory;
 
@@ -100,6 +106,7 @@ public class BlastMineImprovedPlugin extends Plugin
 		overlayManager.add(statusOverlay);
 		overlayManager.add(nextClickOverlay);
 		overlayManager.add(inventoryOreTimerOverlay);
+		clientThread.invoke(changelogService::maybeAnnounce);
 		log.debug("Blast Mine Improved started");
 	}
 
@@ -114,6 +121,9 @@ public class BlastMineImprovedPlugin extends Plugin
 		oreTracker.reset();
 		groundOreTracker.reset();
 		helperService.resetRotation();
+		changelogService.reset();
+		loginGraceTicks = 0;
+		properLogged = false;
 
 		final Widget blastMineWidget = client.getWidget(InterfaceID.LovakengjBlastMiningHud.DATA);
 		if (blastMineWidget != null)
@@ -141,6 +151,24 @@ public class BlastMineImprovedPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onGameObjectDespawned(GameObjectDespawned event)
+	{
+		final GameObject gameObject = event.getGameObject();
+		if (BlastMineRockType.getRockType(gameObject.getId()) == null)
+		{
+			return;
+		}
+
+		WorldPoint loc = gameObject.getWorldLocation();
+		BlastMineRock stored = rocks.get(loc);
+		// Same-tick type-change spawn must not be wiped by the outgoing object's despawn.
+		if (stored != null && stored.getGameObject() == gameObject)
+		{
+			rocks.remove(loc);
+		}
+	}
+
+	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
 		if (event.getGameState() == GameState.LOADING)
@@ -154,22 +182,41 @@ public class BlastMineImprovedPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGGED_IN)
 		{
 			properLogged = false;
-			Timer logTimer = new Timer("bmi-login-grace", true);
-			logTimer.schedule(new TimerTask()
-			{
-				@Override
-				public void run()
-				{
-					properLogged = true;
-					logTimer.cancel();
-				}
-			}, 3000);
+			loginGraceTicks = LOGIN_GRACE_TICKS;
+		}
+
+		changelogService.onGameStateChanged(event);
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!BlastMineImprovedConfig.GROUP.equals(event.getGroup()))
+		{
+			return;
+		}
+		String key = event.getKey();
+		if ("rotationMethod".equals(key)
+			|| "dynamitePerTrip".equals(key)
+			|| "guideOrePickup".equals(key)
+			|| "enableHelper".equals(key))
+		{
+			helperService.resetRotation();
 		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
+		if (loginGraceTicks > 0)
+		{
+			loginGraceTicks--;
+			if (loginGraceTicks == 0)
+			{
+				properLogged = true;
+			}
+		}
+
 		if (rocks.isEmpty() && !BlastMineArea.isInBlastMine(client))
 		{
 			helperService.update(rocks);
@@ -209,7 +256,7 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory != null && event.getItemContainer() == inventory)
 		{
 			previousInventory = inventory;
@@ -231,7 +278,7 @@ public class BlastMineImprovedPlugin extends Plugin
 			return;
 		}
 
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory == null)
 		{
 			return;

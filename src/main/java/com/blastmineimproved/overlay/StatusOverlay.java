@@ -114,8 +114,8 @@ public class StatusOverlay extends Overlay
 		if (showOre)
 		{
 			icons = refreshOreIcons();
-			sackFull = helperService.isSackFull();
-			stats = helperService.totalSackOres() + " ores · " + formatXp(helperService.estimateSackXp())
+			sackFull = helperService.isCachedSackFull();
+			stats = helperService.getCachedTotalSackOres() + " ores · " + formatXp(helperService.getCachedSackXp())
 				+ (config.assumeProspectors() ? "*" : "")
 				+ (sackFull ? " · FULL" : "");
 		}
@@ -199,9 +199,9 @@ public class StatusOverlay extends Overlay
 
 			if (!sackFull)
 			{
-				String left = helperService.totalSackOres() + " ores · ";
+				String left = helperService.getCachedTotalSackOres() + " ores · ";
 				g.setColor(XP_COLOR);
-				g.drawString(formatXp(helperService.estimateSackXp()) + (config.assumeProspectors() ? "*" : ""),
+				g.drawString(formatXp(helperService.getCachedSackXp()) + (config.assumeProspectors() ? "*" : ""),
 					x + fm.stringWidth(left), y);
 			}
 		}

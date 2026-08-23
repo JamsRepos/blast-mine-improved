@@ -13,11 +13,11 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Getter;
 import net.runelite.api.Client;
-import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
 
@@ -25,24 +25,13 @@ import net.runelite.api.gameval.VarbitID;
 public class HelperService
 {
 	private static final int SACK_FULL_THRESHOLD = 900;
-	private static final int DEPOSIT_ORE_COUNT = 20;
-	/** After this many full 1-2→7-8 passes, the next pass is the short 1-2 + 3-4 finale. */
-	private static final int FULL_PASSES_BEFORE_FINALE = 2;
 	/** Player is "at" the NE rotation when within this distance of any NE marker. */
 	private static final int NE_AREA_RADIUS = 10;
-	/** Filler items so using noted dynamite on the chest yields exactly 20 unnoted. */
-	private static final int PLACEHOLDER_SLOTS = 5;
-	/** One deposit cycle is 20 blasted ore. */
-	private static final int ORE_CYCLE_SLOTS = 20;
 	private static final int INVENTORY_SIZE = 28;
 	private static final Color NEXT_COLOR = new Color(0, 200, 255, 180);
 	private static final Color WARN_COLOR = new Color(255, 170, 0, 180);
 	private static final Color DEPOSIT_COLOR = new Color(10, 255, 0, 180);
 	private static final Color GUIDE_COLOR = new Color(255, 220, 0, 200);
-
-	private static final List<NortheastSite> SHORT_FINALE_SITES = List.of(
-		NortheastSite.PAIR_1_2,
-		NortheastSite.PAIR_3_4);
 
 	private final Client client;
 	private final BlastMineImprovedConfig config;
@@ -55,12 +44,15 @@ public class HelperService
 	/** Cached highlight tiles for O(1) focus checks in overlays (updated only when action changes). */
 	private Set<WorldPoint> focusTiles = Collections.emptySet();
 
-	/** Helper only guides pairs 1-2 and 3-4 for blasting until you deposit. */
+	/**
+	 * Loot-as-you-go only: after the planned full laps, guide the short finale pairs.
+	 * Blast-then-loot never uses this — it keeps cycling 1-2→7-8 until dynamite is gone.
+	 */
 	private boolean shortFinale;
 
 	private int fullPassesCompleted;
 
-	/** Sites blasted at least once this trip (eligible for pickup on a later pass). */
+	/** Sites blasted at least once this trip (eligible for pickup on a later loot-as-you-go pass). */
 	private final Set<NortheastSite> blastedThisTrip = EnumSet.noneOf(NortheastSite.class);
 
 	/** Sites already fired this pass — keep moving; don't rework or wait on them. */
@@ -71,6 +63,16 @@ public class HelperService
 	 * completed — otherwise leftover fuses from the previous lap auto-skip 7-8.
 	 */
 	private final Set<NortheastSite> workedThisPass = EnumSet.noneOf(NortheastSite.class);
+
+	/** Set when a blast-then-loot trip spends its last dynamite, so the next refill starts a clean lap. */
+	private boolean tripExhausted;
+
+	@Getter
+	private int cachedSackXp;
+	@Getter
+	private int cachedTotalSackOres;
+	@Getter
+	private boolean cachedSackFull;
 
 	@Inject
 	HelperService(
@@ -92,6 +94,7 @@ public class HelperService
 		blastedThisTrip.clear();
 		completedThisPass.clear();
 		workedThisPass.clear();
+		tripExhausted = false;
 		setCurrentAction(HelperAction.idle());
 	}
 
@@ -124,25 +127,7 @@ public class HelperService
 	 */
 	public boolean shouldHideOffPathRockIcons()
 	{
-		if (currentAction == null)
-		{
-			return false;
-		}
-		switch (currentAction.getKind())
-		{
-			case EXCAVATE:
-			case PLACE_DYNAMITE:
-			case LIGHT:
-			case COLLECT_ORE:
-			case DEPOSIT_SACK:
-			case BANK_DYNAMITE:
-			case PREP_INVENTORY:
-			case WEAR_PROSPECTORS:
-			case COLLECT_OPERATOR:
-				return true;
-			default:
-				return false;
-		}
+		return currentAction != null && currentAction.getKind().hidesOffPathIcons();
 	}
 
 	/**
@@ -151,47 +136,22 @@ public class HelperService
 	 */
 	public boolean restrictRockIconsToFocusTiles()
 	{
-		if (currentAction == null)
-		{
-			return false;
-		}
-		switch (currentAction.getKind())
-		{
-			case EXCAVATE:
-			case PLACE_DYNAMITE:
-			case LIGHT:
-				return true;
-			default:
-				return false;
-		}
+		return currentAction != null && currentAction.getKind().iconsOnFocusOnly();
 	}
 
 	/**
 	 * True when off-path excavate/place/light menus should be removed.
+	 * Collect/deposit/bank do not share this — they hide icons but must not strip Light.
 	 */
 	public boolean isFocusingBlastingStep()
 	{
-		if (currentAction == null)
-		{
-			return false;
-		}
-		switch (currentAction.getKind())
-		{
-			case EXCAVATE:
-			case PLACE_DYNAMITE:
-			case LIGHT:
-			case COLLECT_ORE:
-			case DEPOSIT_SACK:
-			case BANK_DYNAMITE:
-			case PREP_INVENTORY:
-				return true;
-			default:
-				return false;
-		}
+		return currentAction != null && currentAction.getKind().stripsOffPathRockMenus();
 	}
 
 	public void update(Map<WorldPoint, BlastMineRock> rocks)
 	{
+		refreshSackCache();
+
 		if (!config.enableHelper() || !BlastMineArea.isInBlastMine(client))
 		{
 			setCurrentAction(HelperAction.idle());
@@ -200,10 +160,21 @@ public class HelperService
 
 		InventorySnapshot inv = scanInventory();
 		int oreCount = oreTracker.getOreCount();
-		int dynamite = inv.unnotedDynamite;
+		int dynamite = inv.getUnnotedDynamite();
+		TripPlan plan = TripPlan.of(config.dynamitePerTrip());
+		boolean blastThenLoot = config.rotationMethod() == RotationMethod.BLAST_THEN_LOOT;
+		boolean guidePickup = config.guideOrePickup();
+		boolean groundClear = !groundOreTracker.hasAnyOre();
+		boolean groundOkForReset = !HelperPolicy.tripResetRequiresClearGround(guidePickup) || groundClear;
 
-		// After the short finale, start a fresh 1-2→7-8 trip once inventory and ground are clear.
-		if (shortFinale && oreCount == 0 && dynamite > 0 && !groundOreTracker.hasAnyOre())
+		if (blastThenLoot)
+		{
+			if (tripExhausted && dynamite > 0)
+			{
+				resetRotation();
+			}
+		}
+		else if (shortFinale && oreCount == 0 && dynamite > 0 && groundOkForReset)
 		{
 			resetRotation();
 		}
@@ -212,31 +183,31 @@ public class HelperService
 		{
 			setCurrentAction(new HelperAction(
 				HelperAction.Kind.IDLE,
-				"Go to the north-east rotation (pairs 1-2)",
+				"Head to the north-east pairs (start at 1-2)",
 				List.of(NortheastSite.PAIR_1_2.getTile()),
 				GUIDE_COLOR));
 			return;
 		}
 
-		List<NortheastSite> sites = shortFinale ? SHORT_FINALE_SITES : NortheastSite.ORDER;
+		List<NortheastSite> sites = activeSites(plan, blastThenLoot);
 		Map<NortheastSite, List<BlastMineRock>> bySite = groupBySite(rocks);
-		updatePassProgress(sites, bySite);
+		updatePassProgress(sites, bySite, plan, blastThenLoot);
 
-		if (isSackFull())
+		if (cachedSackFull)
 		{
 			setCurrentAction(new HelperAction(
 				HelperAction.Kind.WEAR_PROSPECTORS,
-				"Sack full — wear prospectors, then collect from the operator",
+				"Sack full — wear prospectors, then collect",
 				List.of(NortheastSite.OPERATOR),
 				WARN_COLOR));
 			return;
 		}
 
-		if (oreCount >= DEPOSIT_ORE_COUNT)
+		if (oreCount >= plan.getDynamitePerTrip())
 		{
 			setCurrentAction(new HelperAction(
 				HelperAction.Kind.DEPOSIT_SACK,
-				"Deposit 20 blasted ore into the sack",
+				"Deposit ore into the sack",
 				List.of(NortheastSite.SACK),
 				DEPOSIT_COLOR));
 			return;
@@ -244,18 +215,18 @@ public class HelperService
 
 		if (dynamite == 0)
 		{
-			HelperAction pendingLight = pendingLightAction(bySite);
+			HelperAction pendingLight = pendingLightAction(bySite, dynamite);
 			if (pendingLight != null)
 			{
 				setCurrentAction(pendingLight);
 				return;
 			}
 
-			if (groundOreTracker.hasAnyOre())
+			if (guidePickup && groundOreTracker.hasAnyOre())
 			{
 				setCurrentAction(new HelperAction(
 					HelperAction.Kind.COLLECT_ORE,
-					"Out of dynamite — pick up remaining blasted ore",
+					"Pick up remaining ore",
 					groundOreTracker.allOreTiles(),
 					DEPOSIT_COLOR));
 				return;
@@ -264,32 +235,37 @@ public class HelperService
 			{
 				setCurrentAction(new HelperAction(
 					HelperAction.Kind.DEPOSIT_SACK,
-					"Deposit blasted ore into the sack (" + oreCount + ")",
+					"Deposit ore (" + oreCount + ")",
 					List.of(NortheastSite.SACK),
 					DEPOSIT_COLOR));
 				return;
 			}
-			setCurrentAction(bankDynamiteAction(inv, "Out of dynamite — use noted dynamite on the bank chest"));
+			if (blastThenLoot)
+			{
+				tripExhausted = true;
+			}
+			setCurrentAction(bankDynamiteAction(inv, "Use noted dynamite on the bank chest"));
 			return;
 		}
 
-		// Missing tools always block; full kit check before starting a trip or when banking.
-		HelperAction prep = prepInventoryAction(inv, oreCount == 0 && !groundOreTracker.hasAnyOre());
+		HelperAction prep = prepInventoryAction(inv, plan, oreCount == 0 && groundClear);
 		if (prep != null)
 		{
 			setCurrentAction(prep);
 			return;
 		}
 
-		if (dynamite <= config.lowDynamiteThreshold() && oreCount == 0 && !groundOreTracker.hasAnyOre())
+		if (dynamite <= config.lowDynamiteThreshold() && oreCount == 0 && groundClear)
 		{
-			setCurrentAction(bankDynamiteAction(inv, "Low dynamite (" + dynamite + ") — use noted dynamite on the bank chest"));
+			setCurrentAction(bankDynamiteAction(inv, "Low dynamite (" + dynamite + ") — refill at the chest"));
 			return;
 		}
 
-		boolean allowPickup = shortFinale
-			? blastedThisTrip.containsAll(SHORT_FINALE_SITES)
-			: blastedThisTrip.containsAll(NortheastSite.ORDER);
+		boolean allowPickup = !blastThenLoot
+			&& HelperPolicy.emitCollectAtPair(config.rotationMethod(), guidePickup)
+			&& (shortFinale
+				? blastedThisTrip.containsAll(plan.finaleSites())
+				: blastedThisTrip.containsAll(NortheastSite.ORDER));
 
 		for (NortheastSite site : sites)
 		{
@@ -299,7 +275,7 @@ public class HelperService
 			}
 
 			List<BlastMineRock> siteRocks = bySite.getOrDefault(site, Collections.emptyList());
-			HelperAction action = actionForSite(site, siteRocks, shortFinale, allowPickup);
+			HelperAction action = actionForSite(site, siteRocks, shortFinale && !blastThenLoot, allowPickup, dynamite);
 			if (action != null)
 			{
 				setCurrentAction(action);
@@ -320,13 +296,45 @@ public class HelperService
 
 		setCurrentAction(new HelperAction(
 			HelperAction.Kind.IDLE,
-			shortFinale
-				? "Finale clear — sweep ore when out of dynamite, deposit at 20"
-				: "North-east rotation ready — start excavating pair 1-2",
-			shortFinale
-				? List.of(NortheastSite.PAIR_1_2.getTile(), NortheastSite.PAIR_3_4.getTile())
+			blastThenLoot
+				? "Ready — blast every pair, then loot"
+				: shortFinale
+					? "Finale done — pick up and deposit"
+					: "Ready — start at pair 1-2",
+			shortFinale && !blastThenLoot
+				? highlightForFinale(plan)
 				: NortheastSite.PAIR_1_2.getWallTiles(),
 			NEXT_COLOR));
+	}
+
+	private List<NortheastSite> activeSites(TripPlan plan, boolean blastThenLoot)
+	{
+		if (blastThenLoot)
+		{
+			return NortheastSite.ORDER;
+		}
+		if (!shortFinale)
+		{
+			return NortheastSite.ORDER;
+		}
+
+		List<NortheastSite> finale = new ArrayList<>(plan.finaleSites());
+		NortheastSite leftover = plan.leftoverSite();
+		if (leftover != null && !finale.contains(leftover))
+		{
+			finale.add(leftover);
+		}
+		return finale;
+	}
+
+	private static List<WorldPoint> highlightForFinale(TripPlan plan)
+	{
+		List<WorldPoint> tiles = new ArrayList<>();
+		for (NortheastSite site : plan.finaleSites())
+		{
+			tiles.add(site.getTile());
+		}
+		return tiles.isEmpty() ? NortheastSite.PAIR_1_2.getWallTiles() : tiles;
 	}
 
 	private void setCurrentAction(HelperAction action)
@@ -350,9 +358,9 @@ public class HelperService
 
 	private HelperAction bankDynamiteAction(InventorySnapshot inv, String detail)
 	{
-		if (!inv.hasNotedDynamite)
+		if (!inv.isNotedDynamite())
 		{
-			detail = "Need a noted dynamite stack — then use it on the bank chest";
+			detail = "Need noted dynamite — use it on the bank chest";
 		}
 		return new HelperAction(
 			HelperAction.Kind.BANK_DYNAMITE,
@@ -362,17 +370,20 @@ public class HelperService
 	}
 
 	/**
-	 * Require chisel, tinderbox, noted dynamite, 5 placeholder items, and 20 ore-cycle slots
-	 * (empty and/or unnoted dynamite) before starting — matches the common NE setup.
+	 * Require chisel, tinderbox, noted dynamite, auto-sized placeholders, and trip-size
+	 * empty/unnoted slots before starting. Placeholders are 28 − dynamite − tools so the
+	 * chest fill matches the trip.
 	 */
-	private HelperAction prepInventoryAction(InventorySnapshot inv, boolean fullKitRequired)
+	private HelperAction prepInventoryAction(InventorySnapshot inv, TripPlan plan, boolean fullKitRequired)
 	{
+		int placeholders = plan.placeholderSlots();
+		int tripSize = plan.getDynamitePerTrip();
 		List<String> missing = new ArrayList<>();
-		if (!inv.hasChisel)
+		if (!inv.isChisel())
 		{
 			missing.add("chisel");
 		}
-		if (!inv.hasTinderbox)
+		if (!inv.isTinderbox())
 		{
 			missing.add("tinderbox");
 		}
@@ -384,17 +395,17 @@ public class HelperService
 
 		if (fullKitRequired)
 		{
-			if (!inv.hasNotedDynamite)
+			if (!inv.isNotedDynamite())
 			{
 				missing.add("noted dynamite");
 			}
-			if (inv.placeholderItems < PLACEHOLDER_SLOTS)
+			if (inv.getPlaceholderItems() < placeholders)
 			{
-				missing.add((PLACEHOLDER_SLOTS - inv.placeholderItems) + " more placeholder item(s)");
+				missing.add((placeholders - inv.getPlaceholderItems()) + " more filler item(s)");
 			}
-			if (inv.oreCycleCapacity() < ORE_CYCLE_SLOTS)
+			if (inv.oreCycleCapacity() < tripSize)
 			{
-				missing.add("20 empty spaces or 20 unnoted dynamite");
+				missing.add(tripSize + " empty slots or unnoted dynamite");
 			}
 		}
 
@@ -403,7 +414,7 @@ public class HelperService
 			return null;
 		}
 
-		WorldPoint highlight = (!inv.hasNotedDynamite || inv.oreCycleCapacity() < ORE_CYCLE_SLOTS)
+		WorldPoint highlight = (!inv.isNotedDynamite() || inv.oreCycleCapacity() < tripSize)
 			? NortheastSite.BANK_CHEST
 			: NortheastSite.PAIR_1_2.getTile();
 
@@ -416,12 +427,16 @@ public class HelperService
 
 	private InventorySnapshot scanInventory()
 	{
-		InventorySnapshot snap = new InventorySnapshot();
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		boolean chisel = false;
+		boolean tinderbox = false;
+		boolean notedDynamite = false;
+		int emptySlots = 0;
+		int placeholderItems = 0;
+
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory == null)
 		{
-			snap.emptySlots = INVENTORY_SIZE;
-			return snap;
+			return new InventorySnapshot(false, false, false, 0, INVENTORY_SIZE, 0);
 		}
 
 		Item[] items = inventory.getItems();
@@ -430,19 +445,19 @@ public class HelperService
 			Item item = i < items.length ? items[i] : null;
 			if (item == null || item.getId() < 0)
 			{
-				snap.emptySlots++;
+				emptySlots++;
 				continue;
 			}
 
 			int id = item.getId();
 			if (id == ItemID.CHISEL)
 			{
-				snap.hasChisel = true;
+				chisel = true;
 				continue;
 			}
 			if (id == ItemID.TINDERBOX)
 			{
-				snap.hasTinderbox = true;
+				tinderbox = true;
 				continue;
 			}
 			if (id == ItemID.LOVAKENGJ_DYNAMITE_FUSED)
@@ -453,16 +468,20 @@ public class HelperService
 			ItemComposition def = client.getItemDefinition(id);
 			if (def.getNote() != -1 && def.getLinkedNoteId() == ItemID.LOVAKENGJ_DYNAMITE_FUSED)
 			{
-				snap.hasNotedDynamite = true;
+				notedDynamite = true;
 				continue;
 			}
 
-			// Any other occupied slot is a placeholder / filler (staminas, teleports, etc.)
-			snap.placeholderItems++;
+			placeholderItems++;
 		}
 
-		snap.unnotedDynamite = inventory.count(ItemID.LOVAKENGJ_DYNAMITE_FUSED);
-		return snap;
+		return new InventorySnapshot(
+			chisel,
+			tinderbox,
+			notedDynamite,
+			inventory.count(ItemID.LOVAKENGJ_DYNAMITE_FUSED),
+			emptySlots,
+			placeholderItems);
 	}
 
 	private NortheastSite firstIncompleteSite(List<NortheastSite> sites)
@@ -477,7 +496,7 @@ public class HelperService
 		return null;
 	}
 
-	private HelperAction pendingLightAction(Map<NortheastSite, List<BlastMineRock>> bySite)
+	private HelperAction pendingLightAction(Map<NortheastSite, List<BlastMineRock>> bySite, int dynamite)
 	{
 		for (NortheastSite site : NortheastSite.ORDER)
 		{
@@ -485,32 +504,28 @@ public class HelperService
 			List<BlastMineRock> loaded = filter(siteRocks, BlastMineRockType.LOADED);
 			List<BlastMineRock> lit = filter(siteRocks, BlastMineRockType.LIT);
 
-			if (loaded.size() >= 2)
+			if (!HelperPolicy.canLightLoadedPots(dynamite, loaded.size(), lit.size()))
 			{
-				return new HelperAction(
-					HelperAction.Kind.LIGHT,
-					"Out of dynamite — light pair " + site.getLabel() + " together",
-					tilesOf(loaded, site),
-					WARN_COLOR);
+				continue;
 			}
 
-			if (loaded.size() == 1 && !lit.isEmpty())
-			{
-				return new HelperAction(
-					HelperAction.Kind.LIGHT,
-					"Out of dynamite — light the remaining pot on pair " + site.getLabel(),
-					tilesOf(loaded, site),
-					WARN_COLOR);
-			}
+			String detail = loaded.size() >= 2
+				? "Light pair " + site.getLabel()
+				: "Light leftover pot on " + site.getLabel();
+			return new HelperAction(
+				HelperAction.Kind.LIGHT,
+				detail,
+				tilesOf(loaded, site),
+				WARN_COLOR);
 		}
 		return null;
 	}
 
-	/**
-	 * Mark pairs done for this pass once fired. When every active site is done,
-	 * start the next pass — and after two full passes, switch to the short finale.
-	 */
-	private void updatePassProgress(List<NortheastSite> sites, Map<NortheastSite, List<BlastMineRock>> bySite)
+	private void updatePassProgress(
+		List<NortheastSite> sites,
+		Map<NortheastSite, List<BlastMineRock>> bySite,
+		TripPlan plan,
+		boolean blastThenLoot)
 	{
 		for (NortheastSite site : sites)
 		{
@@ -528,7 +543,7 @@ public class HelperService
 			}
 		}
 
-		boolean allDone = true;
+		boolean allDone = !sites.isEmpty();
 		for (NortheastSite site : sites)
 		{
 			if (!completedThisPass.contains(site))
@@ -537,14 +552,14 @@ public class HelperService
 				break;
 			}
 		}
-		if (allDone && !sites.isEmpty())
+		if (allDone)
 		{
 			completedThisPass.clear();
 			workedThisPass.clear();
-			if (!shortFinale)
+			if (!blastThenLoot && !shortFinale)
 			{
 				fullPassesCompleted++;
-				if (fullPassesCompleted >= FULL_PASSES_BEFORE_FINALE)
+				if (fullPassesCompleted >= plan.getFullLaps())
 				{
 					shortFinale = true;
 				}
@@ -556,14 +571,15 @@ public class HelperService
 		NortheastSite site,
 		List<BlastMineRock> siteRocks,
 		boolean finale,
-		boolean allowPickup)
+		boolean allowPickup,
+		int dynamite)
 	{
 		List<BlastMineRock> normal = filter(siteRocks, BlastMineRockType.NORMAL);
 		List<BlastMineRock> chiseled = filter(siteRocks, BlastMineRockType.CHISELED);
 		List<BlastMineRock> loaded = filter(siteRocks, BlastMineRockType.LOADED);
 		List<BlastMineRock> lit = filter(siteRocks, BlastMineRockType.LIT);
 
-		String finalePrefix = finale ? "Finale: " : "";
+		String finalePrefix = finale ? "Finale — " : "";
 
 		if (allowPickup && groundOreTracker.hasOreAtSite(site)
 			&& chiseled.isEmpty() && loaded.isEmpty() && lit.isEmpty())
@@ -575,7 +591,7 @@ public class HelperService
 			}
 			return new HelperAction(
 				HelperAction.Kind.COLLECT_ORE,
-				finalePrefix + "Pick up ore at pair " + site.getLabel() + ", then excavate",
+				finalePrefix + "Pick up ore at " + site.getLabel(),
 				oreTiles,
 				DEPOSIT_COLOR);
 		}
@@ -602,34 +618,27 @@ public class HelperService
 		{
 			return new HelperAction(
 				HelperAction.Kind.PLACE_DYNAMITE,
-				finalePrefix + "Place dynamite on pair " + site.getLabel(),
+				finalePrefix + "Place dynamite on " + site.getLabel(),
 				tilesOf(chiseled, site),
 				NEXT_COLOR);
 		}
 
-		if (loaded.size() >= 2)
+		if (HelperPolicy.canLightLoadedPots(dynamite, loaded.size(), lit.size()))
 		{
 			return new HelperAction(
 				HelperAction.Kind.LIGHT,
-				finalePrefix + "Light pair " + site.getLabel() + " together",
+				loaded.size() >= 2
+					? finalePrefix + "Light pair " + site.getLabel()
+					: finalePrefix + "Light leftover pot on " + site.getLabel(),
 				tilesOf(loaded, site),
-				NEXT_COLOR);
-		}
-
-		if (loaded.size() == 1 && !lit.isEmpty())
-		{
-			return new HelperAction(
-				HelperAction.Kind.LIGHT,
-				finalePrefix + "Light the remaining pot on pair " + site.getLabel(),
-				tilesOf(loaded, site),
-				WARN_COLOR);
+				loaded.size() == 1 ? WARN_COLOR : NEXT_COLOR);
 		}
 
 		if (loaded.size() == 1)
 		{
 			return new HelperAction(
 				HelperAction.Kind.PLACE_DYNAMITE,
-				finalePrefix + "Finish loading pair " + site.getLabel() + " before lighting",
+				finalePrefix + "Load the other pot on " + site.getLabel(),
 				site.getWallTiles(),
 				WARN_COLOR);
 		}
@@ -714,7 +723,29 @@ public class HelperService
 		return tiles;
 	}
 
+	private void refreshSackCache()
+	{
+		cachedSackFull = computeSackFull();
+		cachedTotalSackOres = computeTotalSackOres();
+		cachedSackXp = computeSackXp();
+	}
+
 	public boolean isSackFull()
+	{
+		return cachedSackFull;
+	}
+
+	public int estimateSackXp()
+	{
+		return cachedSackXp;
+	}
+
+	public int totalSackOres()
+	{
+		return cachedTotalSackOres;
+	}
+
+	private boolean computeSackFull()
 	{
 		return client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_COAL_BIGGER) >= SACK_FULL_THRESHOLD
 			|| client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_GOLD_BIGGER) >= SACK_FULL_THRESHOLD
@@ -723,7 +754,7 @@ public class HelperService
 			|| client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_RUNITE_BIGGER) >= SACK_FULL_THRESHOLD;
 	}
 
-	public int estimateSackXp()
+	private int computeSackXp()
 	{
 		int coal = client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_COAL_BIGGER);
 		int gold = client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_GOLD_BIGGER);
@@ -744,27 +775,12 @@ public class HelperService
 		return (int) Math.round(xp);
 	}
 
-	public int totalSackOres()
+	private int computeTotalSackOres()
 	{
 		return client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_COAL_BIGGER)
 			+ client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_GOLD_BIGGER)
 			+ client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_MITHRIL_BIGGER)
 			+ client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_ADAMANTITE_BIGGER)
 			+ client.getVarbitValue(VarbitID.LOVAKENGJ_ORE_RUNITE_BIGGER);
-	}
-
-	private static final class InventorySnapshot
-	{
-		boolean hasChisel;
-		boolean hasTinderbox;
-		boolean hasNotedDynamite;
-		int unnotedDynamite;
-		int emptySlots;
-		int placeholderItems;
-
-		int oreCycleCapacity()
-		{
-			return emptySlots + unnotedDynamite;
-		}
 	}
 }

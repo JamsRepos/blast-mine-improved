@@ -5,13 +5,13 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
-import net.runelite.api.InventoryID;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.Tile;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.ObjectID;
 
@@ -21,7 +21,6 @@ public class MenuSafetyService
 	private static final String EXCAVATE = "Excavate";
 	private static final String LIGHT = "Light";
 	private static final String PLACE = "Place";
-	private static final String DEPOSIT = "Deposit";
 
 	private final Client client;
 	private final BlastMineImprovedConfig config;
@@ -44,11 +43,12 @@ public class MenuSafetyService
 
 		String option = event.getOption();
 		MenuEntry entry = event.getMenuEntry();
+		boolean outOfDynamite = !hasUnnotedDynamite();
 
 		if (config.deprioritizeWithoutDynamite()
 			&& EXCAVATE.equals(option)
 			&& isHardRock(event.getIdentifier())
-			&& !hasUnnotedDynamite())
+			&& outOfDynamite)
 		{
 			entry.setDeprioritized(true);
 		}
@@ -57,21 +57,33 @@ public class MenuSafetyService
 		{
 			if (EXCAVATE.equals(option) || PLACE.equals(option) || LIGHT.equals(option))
 			{
-				WorldPoint point = worldPointForMenuTarget(entry);
-				if (point != null && !helperService.isFocusTile(point))
+				// Loaded pots must stay firable when dynamite is gone (odd last pot).
+				if (LIGHT.equals(option) && HelperPolicy.neverRemoveLight(outOfDynamite ? 0 : 1))
 				{
-					client.getMenu().removeMenuEntry(entry);
-					return;
+					// keep Light
+				}
+				else
+				{
+					WorldPoint point = worldPointForMenuTarget(entry);
+					if (point != null && !helperService.isFocusTile(point))
+					{
+						client.getMenu().removeMenuEntry(entry);
+						return;
+					}
 				}
 			}
 		}
 
-		if (config.pairLightSafety() && LIGHT.equals(option) && isLoadedPot(event.getIdentifier()))
+		if (config.pairLightSafety()
+			&& LIGHT.equals(option)
+			&& isLoadedPot(event.getIdentifier())
+			&& !HelperPolicy.neverRemoveLight(outOfDynamite ? 0 : 1))
 		{
 			WorldPoint point = worldPointForMenuTarget(entry);
 			if (point != null && !bothPotsLoaded(point, rocks))
 			{
 				client.getMenu().removeMenuEntry(entry);
+				return;
 			}
 		}
 
@@ -89,39 +101,18 @@ public class MenuSafetyService
 			return;
 		}
 
-		boolean match = false;
-		switch (action.getKind())
+		if (!action.getKind().matchesPrefer(option))
 		{
-			case EXCAVATE:
-				match = EXCAVATE.equals(option);
-				break;
-			case PLACE_DYNAMITE:
-				match = PLACE.equals(option) || "Use".equals(option);
-				break;
-			case LIGHT:
-				match = LIGHT.equals(option);
-				break;
-			case DEPOSIT_SACK:
-				match = DEPOSIT.equals(option) || option.contains("Deposit");
-				break;
-			case BANK_DYNAMITE:
-				match = "Use".equals(option);
-				break;
-			case PREP_INVENTORY:
-				match = "Use".equals(option) || DEPOSIT.equals(option);
-				break;
-			case COLLECT_OPERATOR:
-			case WEAR_PROSPECTORS:
-				match = "Talk-to".equals(option) || "Collect".equals(option);
-				break;
-			default:
-				break;
+			return;
 		}
 
-		if (match)
+		WorldPoint point = worldPointForMenuTarget(entry);
+		if (point != null && !action.getHighlightTiles().isEmpty() && !helperService.isFocusTile(point))
 		{
-			entry.setForceLeftClick(true);
+			return;
 		}
+
+		entry.setForceLeftClick(true);
 	}
 
 	/**
@@ -216,7 +207,7 @@ public class MenuSafetyService
 
 	private boolean hasUnnotedDynamite()
 	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		return inventory != null && inventory.contains(ItemID.LOVAKENGJ_DYNAMITE_FUSED);
 	}
 

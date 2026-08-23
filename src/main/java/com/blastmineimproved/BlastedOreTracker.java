@@ -13,9 +13,9 @@ import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
-import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 
 /**
@@ -87,7 +87,7 @@ public class BlastedOreTracker
 
 	public void syncFromInventory()
 	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory == null)
 		{
 			timersBySlot.clear();
