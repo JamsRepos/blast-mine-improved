@@ -21,7 +21,7 @@ final class Changelog
 			"The last leftover pot now lights when dynamite runs out, including an odd 21st."
 		),
 		new Release("1.1.1",
-			"Renamed to Jam's Blast Mine in the plugin panel and Hub."
+			"Renamed from Blast Mine Improved to Jam's Blast Mine in the plugin panel and Hub."
 		)
 	);
 
