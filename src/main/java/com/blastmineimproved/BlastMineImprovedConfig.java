@@ -339,7 +339,7 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = SEEN_CHANGELOG_VERSION_KEY,
 		name = "Seen changelog version",
-		description = "Last Blast Mine Improved version whose update notes were shown in chat.",
+		description = "Last Jam's Blast Mine version whose update notes were shown in chat.",
 		hidden = true
 	)
 	default String seenChangelogVersion()

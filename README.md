@@ -1,4 +1,4 @@
-# Blast Mine Improved
+# Jam's Blast Mine
 
 RuneLite plugin that replaces the built-in **Blast Mine** plugin with a north-east rotation helper, mistake-prevention menus, inventory ore timers, and sack XP estimates.
 

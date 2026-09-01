@@ -11,7 +11,7 @@ import java.util.List;
  */
 final class Changelog
 {
-	static final String VERSION = "1.1.0";
+	static final String VERSION = "1.1.1";
 
 	static final List<Release> RELEASES = List.of(
 		new Release("1.1.0",
@@ -19,6 +19,9 @@ final class Changelog
 			"Guide ore pickups can be turned off if you area-loot another way.",
 			"Dynamite per trip is configurable; placeholder filler is calculated from that (20→5, 21→4).",
 			"The last leftover pot now lights when dynamite runs out, including an odd 21st."
+		),
+		new Release("1.1.1",
+			"Renamed to Jam's Blast Mine in the plugin panel and Hub."
 		)
 	);
 

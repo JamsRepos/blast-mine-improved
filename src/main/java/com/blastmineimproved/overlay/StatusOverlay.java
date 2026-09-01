@@ -74,7 +74,7 @@ public class StatusOverlay extends Overlay
 		this.helperService = helperService;
 		this.itemManager = itemManager;
 		Arrays.fill(cachedOreQty, Integer.MIN_VALUE);
-		addMenuEntry(MenuAction.RUNELITE_OVERLAY_CONFIG, OPTION_CONFIGURE, "Blast Mine Improved");
+		addMenuEntry(MenuAction.RUNELITE_OVERLAY_CONFIG, OPTION_CONFIGURE, "Jam's Blast Mine");
 	}
 
 	@Override
@@ -104,7 +104,7 @@ public class StatusOverlay extends Overlay
 		FontMetrics fm = g.getFontMetrics();
 		int lineHeight = fm.getHeight();
 
-		String title = showHelper ? "Blast Mine Helper" : null;
+		String title = showHelper ? "Jam's Blast Mine" : null;
 		String actionLabel = showHelper ? action.getKind().getLabel() : null;
 		String detail = showHelper ? action.getDetail() : null;
 

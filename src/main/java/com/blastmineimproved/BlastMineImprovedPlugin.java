@@ -39,7 +39,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Blast Mine Improved",
+	name = "Jam's Blast Mine",
 	description = "Blast Mine helper with NE rotation guidance, menu safety, ore timers, and sack XP estimates",
 	tags = {"blast", "mine", "mining", "dynamite", "lovakengj", "minigame", "skilling"},
 	conflicts = {"Blast Mine", "Blast Mine Dynamite Restriction"}
@@ -107,7 +107,7 @@ public class BlastMineImprovedPlugin extends Plugin
 		overlayManager.add(nextClickOverlay);
 		overlayManager.add(inventoryOreTimerOverlay);
 		clientThread.invoke(changelogService::maybeAnnounce);
-		log.debug("Blast Mine Improved started");
+		log.debug("Jam's Blast Mine started");
 	}
 
 	@Override
