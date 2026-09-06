@@ -12,7 +12,6 @@ import net.runelite.client.config.Range;
 public interface BlastMineImprovedConfig extends Config
 {
 	String GROUP = "blastmineimproved";
-	String SEEN_CHANGELOG_VERSION_KEY = "seenChangelogVersion";
 
 	@ConfigSection(
 		name = "Overlays",
@@ -334,17 +333,6 @@ public interface BlastMineImprovedConfig extends Config
 	default int soundVolume()
 	{
 		return 64;
-	}
-
-	@ConfigItem(
-		keyName = SEEN_CHANGELOG_VERSION_KEY,
-		name = "Seen changelog version",
-		description = "Last Jam's Blast Mine version whose update notes were shown in chat.",
-		hidden = true
-	)
-	default String seenChangelogVersion()
-	{
-		return "";
 	}
 
 	enum MessagesEnabledType

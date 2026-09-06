@@ -90,9 +90,6 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Inject
 	private GroundOreTracker groundOreTracker;
 
-	@Inject
-	private ChangelogService changelogService;
-
 	private boolean properLogged;
 	private int loginGraceTicks;
 	private boolean hadDynamite;
@@ -106,7 +103,6 @@ public class BlastMineImprovedPlugin extends Plugin
 		overlayManager.add(statusOverlay);
 		overlayManager.add(nextClickOverlay);
 		overlayManager.add(inventoryOreTimerOverlay);
-		clientThread.invoke(changelogService::maybeAnnounce);
 		log.debug("Jam's Blast Mine started");
 	}
 
@@ -121,7 +117,6 @@ public class BlastMineImprovedPlugin extends Plugin
 		oreTracker.reset();
 		groundOreTracker.reset();
 		helperService.resetRotation();
-		changelogService.reset();
 		loginGraceTicks = 0;
 		properLogged = false;
 
@@ -184,8 +179,6 @@ public class BlastMineImprovedPlugin extends Plugin
 			properLogged = false;
 			loginGraceTicks = LOGIN_GRACE_TICKS;
 		}
-
-		changelogService.onGameStateChanged(event);
 	}
 
 	@Subscribe
