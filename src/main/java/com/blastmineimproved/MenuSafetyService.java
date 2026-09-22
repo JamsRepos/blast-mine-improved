@@ -7,6 +7,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuEntry;
+import net.runelite.api.NPC;
 import net.runelite.api.Tile;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
@@ -21,6 +22,8 @@ public class MenuSafetyService
 	private static final String EXCAVATE = "Excavate";
 	private static final String LIGHT = "Light";
 	private static final String PLACE = "Place";
+	private static final String COLLECT = "Collect";
+	private static final String OPERATOR_NPC_NAME = "Operator";
 
 	private final Client client;
 	private final BlastMineImprovedConfig config;
@@ -72,6 +75,12 @@ public class MenuSafetyService
 					}
 				}
 			}
+		}
+
+		if (COLLECT.equals(option) && helperService.needsProspectorKit() && isOperator(entry))
+		{
+			client.getMenu().removeMenuEntry(entry);
+			return;
 		}
 
 		if (config.pairLightSafety()
@@ -198,6 +207,12 @@ public class MenuSafetyService
 		}
 
 		return false;
+	}
+
+	private static boolean isOperator(MenuEntry entry)
+	{
+		NPC npc = entry.getNpc();
+		return npc != null && OPERATOR_NPC_NAME.equals(npc.getName());
 	}
 
 	private WorldPoint worldPointForMenuTarget(MenuEntry entry)

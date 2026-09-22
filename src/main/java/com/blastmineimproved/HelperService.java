@@ -13,6 +13,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Getter;
 import net.runelite.api.Client;
+import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
@@ -32,6 +33,11 @@ public class HelperService
 	private static final Color WARN_COLOR = new Color(255, 170, 0, 180);
 	private static final Color DEPOSIT_COLOR = new Color(10, 255, 0, 180);
 	private static final Color GUIDE_COLOR = new Color(255, 220, 0, 200);
+	/** Prospector kit: helmet, jacket, legs, boots — no gloves. Golden recolor mixes freely with normal pieces for the set bonus. */
+	private static final int[] PROSPECTOR_HELMS = {ItemID.MOTHERLODE_REWARD_HAT, ItemID.MOTHERLODE_REWARD_HAT_GOLD};
+	private static final int[] PROSPECTOR_BODIES = {ItemID.MOTHERLODE_REWARD_TOP, ItemID.MOTHERLODE_REWARD_TOP_GOLD};
+	private static final int[] PROSPECTOR_LEGS = {ItemID.MOTHERLODE_REWARD_LEGS, ItemID.MOTHERLODE_REWARD_LEGS_GOLD};
+	private static final int[] PROSPECTOR_BOOTS = {ItemID.MOTHERLODE_REWARD_BOOTS, ItemID.MOTHERLODE_REWARD_BOOTS_GOLD};
 
 	private final Client client;
 	private final BlastMineImprovedConfig config;
@@ -195,11 +201,22 @@ public class HelperService
 
 		if (cachedSackFull)
 		{
-			setCurrentAction(new HelperAction(
-				HelperAction.Kind.WEAR_PROSPECTORS,
-				"Sack full — wear prospectors, then collect",
-				List.of(NortheastSite.OPERATOR),
-				WARN_COLOR));
+			if (needsProspectorKit())
+			{
+				setCurrentAction(new HelperAction(
+					HelperAction.Kind.WEAR_PROSPECTORS,
+					"Sack full — wear prospectors, then collect",
+					List.of(NortheastSite.OPERATOR),
+					WARN_COLOR));
+			}
+			else
+			{
+				setCurrentAction(new HelperAction(
+					HelperAction.Kind.COLLECT_OPERATOR,
+					"Sack full — collect from the operator",
+					List.of(NortheastSite.OPERATOR),
+					WARN_COLOR));
+			}
 			return;
 		}
 
@@ -768,11 +785,47 @@ public class HelperService
 			+ addy * 190.0
 			+ rune * 260.0;
 
-		if (config.assumeProspectors())
+		if (config.requireProspectors())
 		{
 			xp *= 1.025;
 		}
 		return (int) Math.round(xp);
+	}
+
+	/** True when the "require prospectors" setting is on and the player isn't wearing the full kit. */
+	public boolean needsProspectorKit()
+	{
+		return config.requireProspectors() && !hasFullProspectorKit();
+	}
+
+	private boolean hasFullProspectorKit()
+	{
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
+		if (equipment == null)
+		{
+			return false;
+		}
+		return isWorn(equipment, EquipmentInventorySlot.HEAD, PROSPECTOR_HELMS)
+			&& isWorn(equipment, EquipmentInventorySlot.BODY, PROSPECTOR_BODIES)
+			&& isWorn(equipment, EquipmentInventorySlot.LEGS, PROSPECTOR_LEGS)
+			&& isWorn(equipment, EquipmentInventorySlot.BOOTS, PROSPECTOR_BOOTS);
+	}
+
+	private static boolean isWorn(ItemContainer equipment, EquipmentInventorySlot slot, int[] itemIds)
+	{
+		Item item = equipment.getItem(slot.getSlotIdx());
+		if (item == null)
+		{
+			return false;
+		}
+		for (int itemId : itemIds)
+		{
+			if (item.getId() == itemId)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private int computeTotalSackOres()
