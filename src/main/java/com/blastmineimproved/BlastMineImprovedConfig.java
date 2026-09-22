@@ -13,6 +13,10 @@ public interface BlastMineImprovedConfig extends Config
 {
 	String GROUP = "blastmineimproved";
 
+	/** @deprecated replaced by {@code requireProspectors}; kept only so {@link BlastMineImprovedPlugin} can migrate saved values. */
+	@Deprecated
+	String LEGACY_ASSUME_PROSPECTORS_KEY = "assumeProspectors";
+
 	@ConfigSection(
 		name = "Overlays",
 		description = "Visual overlays for Blast Mine",
@@ -118,7 +122,7 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = "warningColor",
 		name = "Warning color",
-		description = "Color of the explosion radius warning",
+		description = "Color for explosion radius warnings and other 'needs attention' states, such as a full ore sack",
 		section = overlaysSection,
 		position = 6
 	)
@@ -214,13 +218,14 @@ public interface BlastMineImprovedConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "assumeProspectors",
-		name = "Estimate with prospectors",
-		description = "Apply full prospector kit (+2.5%) to estimated sack XP",
+		keyName = "requireProspectors",
+		name = "Require prospector kit",
+		description = "Prompt to wear the full prospector kit before collecting from the operator, for the "
+			+ "+2.5% Blast Mining XP bonus. Also applied to the sack XP estimate.",
 		section = helperSection,
 		position = 7
 	)
-	default boolean assumeProspectors()
+	default boolean requireProspectors()
 	{
 		return true;
 	}

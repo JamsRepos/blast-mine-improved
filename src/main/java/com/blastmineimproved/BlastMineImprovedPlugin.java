@@ -90,6 +90,9 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Inject
 	private GroundOreTracker groundOreTracker;
 
+	@Inject
+	private ConfigManager configManager;
+
 	private boolean properLogged;
 	private int loginGraceTicks;
 	private boolean hadDynamite;
@@ -98,6 +101,7 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		migrateAssumeProspectorsKey();
 		helperService.resetRotation();
 		overlayManager.add(rockOverlay);
 		overlayManager.add(statusOverlay);
@@ -317,5 +321,18 @@ public class BlastMineImprovedPlugin extends Plugin
 	BlastMineImprovedConfig provideConfig(ConfigManager configManager)
 	{
 		return configManager.getConfig(BlastMineImprovedConfig.class);
+	}
+
+	/** {@code assumeProspectors} became {@code requireProspectors} in 1.1.3 when it started gating collection, not just the XP estimate. */
+	private void migrateAssumeProspectorsKey()
+	{
+		String legacyValue = configManager.getConfiguration(
+			BlastMineImprovedConfig.GROUP, BlastMineImprovedConfig.LEGACY_ASSUME_PROSPECTORS_KEY);
+		if (legacyValue == null)
+		{
+			return;
+		}
+		configManager.setConfiguration(BlastMineImprovedConfig.GROUP, "requireProspectors", legacyValue);
+		configManager.unsetConfiguration(BlastMineImprovedConfig.GROUP, BlastMineImprovedConfig.LEGACY_ASSUME_PROSPECTORS_KEY);
 	}
 }
