@@ -20,12 +20,12 @@ public class HelperAction
 		EXCAVATE("Excavate", true, true, true, "Excavate"),
 		PLACE_DYNAMITE("Place dynamite", true, true, true, "Place", "Use"),
 		LIGHT("Light", true, true, true, "Light"),
-		COLLECT_ORE("Pick up blasted ore", true, false, false, "Take", "Pick-up"),
-		DEPOSIT_SACK("Deposit ore sack", true, false, false, "Deposit"),
-		BANK_DYNAMITE("Use dynamite on bank chest", true, false, false, "Use"),
+		COLLECT_ORE("Collect ore", true, false, false, "Take", "Pick-up"),
+		DEPOSIT_SACK("Deposit sack", true, false, false, "Deposit"),
+		BANK_DYNAMITE("Bank dynamite", true, false, false, "Use"),
 		PREP_INVENTORY("Prepare inventory", true, false, false, "Use", "Deposit"),
-		COLLECT_OPERATOR("Collect from operator", true, false, false, "Talk-to", "Collect"),
-		WEAR_PROSPECTORS("Wear prospectors before collecting", true, false, false, "Talk-to", "Collect");
+		COLLECT_OPERATOR("Visit operator", true, false, false, "Talk-to", "Collect"),
+		WEAR_PROSPECTORS("Wear prospectors", true, false, false, "Talk-to", "Collect");
 
 		@Getter
 		private final String label;

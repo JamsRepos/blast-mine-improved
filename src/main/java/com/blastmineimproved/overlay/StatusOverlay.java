@@ -6,8 +6,9 @@ import com.blastmineimproved.HelperAction;
 import com.blastmineimproved.HelperService;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import javax.inject.Inject;
@@ -18,22 +19,25 @@ import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.ui.overlay.Overlay;
+import net.runelite.client.ui.FontManager;
+import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.components.ComponentConstants;
+import net.runelite.client.ui.overlay.components.LayoutableRenderableEntity;
+import net.runelite.client.ui.overlay.components.LineComponent;
 
 import static net.runelite.client.ui.overlay.OverlayManager.OPTION_CONFIGURE;
 
 /**
- * One movable top-left panel: helper text, then ore icons, then a single stats line.
+ * The Status Panel: a single movable OverlayPanel showing helper guidance, then the live
+ * ore-sack contents. Hides entirely when there's nothing actionable to show.
  */
-public class StatusOverlay extends Overlay
+public class StatusOverlay extends OverlayPanel
 {
-	private static final int PAD = 6;
 	private static final int LINE_GAP = 2;
-	private static final int SECTION_GAP = 6;
 	private static final int ICON_GAP = 2;
-	private static final Color BG = ComponentConstants.STANDARD_BACKGROUND_COLOR;
+	private static final Color DEFAULT_ACTION_COLOR = Color.CYAN;
+	private static final Color LABEL_COLOR = Color.WHITE;
+	private static final Color DETAIL_COLOR = new Color(170, 170, 170);
 	private static final Color XP_COLOR = new Color(140, 220, 140);
 	private static final int[] ORE_ITEM_IDS = {
 		ItemID.COAL,
@@ -69,6 +73,7 @@ public class StatusOverlay extends Overlay
 		super(plugin);
 		setPosition(OverlayPosition.TOP_LEFT);
 		setPriority(PRIORITY_MED);
+		panelComponent.setGap(new Point(0, LINE_GAP));
 		this.client = client;
 		this.config = config;
 		this.helperService = helperService;
@@ -78,7 +83,7 @@ public class StatusOverlay extends Overlay
 	}
 
 	@Override
-	public Dimension render(Graphics2D g)
+	public Dimension render(Graphics2D graphics)
 	{
 		final Widget blastMineWidget = client.getWidget(InterfaceID.LovakengjBlastMiningHud.DATA);
 		final boolean hudPresent = blastMineWidget != null;
@@ -101,112 +106,104 @@ public class StatusOverlay extends Overlay
 			return null;
 		}
 
-		FontMetrics fm = g.getFontMetrics();
-		int lineHeight = fm.getHeight();
-
-		String title = showHelper ? "Jam's Blast Mine" : null;
-		String actionLabel = showHelper ? action.getKind().getLabel() : null;
-		String detail = showHelper ? action.getDetail() : null;
-
-		BufferedImage[] icons = null;
-		String stats = null;
-		boolean sackFull = false;
-		if (showOre)
-		{
-			icons = refreshOreIcons();
-			sackFull = helperService.isCachedSackFull();
-			stats = helperService.getCachedTotalSackOres() + " ores · " + formatXp(helperService.getCachedSackXp())
-				+ (config.assumeProspectors() ? "*" : "")
-				+ (sackFull ? " · FULL" : "");
-		}
-
-		int contentWidth = 0;
-		int contentHeight = 0;
+		panelComponent.getChildren().clear();
 
 		if (showHelper)
 		{
-			contentWidth = Math.max(contentWidth, fm.stringWidth(title));
-			contentWidth = Math.max(contentWidth, fm.stringWidth(actionLabel));
-			contentWidth = Math.max(contentWidth, fm.stringWidth(detail));
-			contentHeight += lineHeight * 3 + LINE_GAP * 2;
-		}
+			Color actionColor = action.getColor() != null ? action.getColor() : DEFAULT_ACTION_COLOR;
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left(action.getKind().getLabel())
+				.leftColor(actionColor)
+				.build());
 
-		int iconRowWidth = 0;
-		int iconRowHeight = 0;
-		if (showOre)
-		{
-			if (showHelper)
-			{
-				contentHeight += SECTION_GAP;
-			}
-			for (int i = 0; i < icons.length; i++)
-			{
-				iconRowWidth += icons[i].getWidth();
-				if (i < icons.length - 1)
-				{
-					iconRowWidth += ICON_GAP;
-				}
-				iconRowHeight = Math.max(iconRowHeight, icons[i].getHeight());
-			}
-			contentWidth = Math.max(contentWidth, iconRowWidth);
-			contentWidth = Math.max(contentWidth, fm.stringWidth(stats));
-			contentHeight += iconRowHeight + LINE_GAP + lineHeight;
-		}
-
-		int boxW = contentWidth + PAD * 2;
-		int boxH = contentHeight + PAD * 2;
-
-		g.setColor(BG);
-		g.fillRect(0, 0, boxW, boxH);
-
-		int y = PAD + fm.getAscent();
-		int x = PAD;
-
-		if (showHelper)
-		{
-			g.setColor(Color.CYAN);
-			g.drawString(title, x, y);
-			y += lineHeight + LINE_GAP;
-
-			Color actionColor = action.getColor() != null ? action.getColor() : Color.CYAN;
-			g.setColor(actionColor);
-			g.drawString(actionLabel, x, y);
-			y += lineHeight + LINE_GAP;
-
-			g.setColor(Color.WHITE);
-			g.drawString(detail, x, y);
-			y += lineHeight;
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left(action.getDetail())
+				.leftColor(DETAIL_COLOR)
+				.leftFont(FontManager.getRunescapeSmallFont())
+				.build());
 		}
 
 		if (showOre)
 		{
 			if (showHelper)
 			{
-				y += SECTION_GAP;
+				panelComponent.getChildren().add(LineComponent.builder().left("").build());
 			}
 
-			int iconY = y - fm.getAscent() + 2;
-			int iconX = x;
-			for (int i = 0; i < icons.length; i++)
+			panelComponent.getChildren().add(new OreIconRow(refreshOreIcons()));
+
+			boolean sackFull = helperService.isCachedSackFull();
+			int totalOres = helperService.getCachedTotalSackOres();
+			String xp = formatXp(helperService.getCachedSackXp()) + (config.requireProspectors() ? "*" : "");
+
+			if (sackFull)
 			{
-				g.drawImage(icons[i], iconX, iconY, null);
-				iconX += icons[i].getWidth() + ICON_GAP;
+				panelComponent.getChildren().add(LineComponent.builder()
+					.left(totalOres + " ores · " + xp + " · FULL")
+					.leftColor(config.getWarningColor())
+					.build());
 			}
-			y = iconY + iconRowHeight + LINE_GAP + fm.getAscent();
-
-			g.setColor(sackFull ? Color.ORANGE : Color.WHITE);
-			g.drawString(stats, x, y);
-
-			if (!sackFull)
+			else
 			{
-				String left = helperService.getCachedTotalSackOres() + " ores · ";
-				g.setColor(XP_COLOR);
-				g.drawString(formatXp(helperService.getCachedSackXp()) + (config.assumeProspectors() ? "*" : ""),
-					x + fm.stringWidth(left), y);
+				panelComponent.getChildren().add(LineComponent.builder()
+					.left(totalOres + " ores")
+					.leftColor(LABEL_COLOR)
+					.right(xp)
+					.rightColor(XP_COLOR)
+					.build());
 			}
 		}
 
-		return new Dimension(boxW, boxH);
+		return super.render(graphics);
+	}
+
+	/** A row of ore icons, laid out as a single panel line. */
+	private static final class OreIconRow implements LayoutableRenderableEntity
+	{
+		private final BufferedImage[] icons;
+		private final Rectangle bounds = new Rectangle();
+		private Point preferredLocation = new Point(0, 0);
+
+		private OreIconRow(BufferedImage[] icons)
+		{
+			this.icons = icons;
+		}
+
+		@Override
+		public Dimension render(Graphics2D graphics)
+		{
+			int startX = preferredLocation.x;
+			int x = startX;
+			int height = 0;
+			for (BufferedImage icon : icons)
+			{
+				graphics.drawImage(icon, x, preferredLocation.y, null);
+				x += icon.getWidth() + ICON_GAP;
+				height = Math.max(height, icon.getHeight());
+			}
+			Dimension dimension = new Dimension(Math.max(0, x - startX - ICON_GAP), height);
+			bounds.setLocation(preferredLocation);
+			bounds.setSize(dimension);
+			return dimension;
+		}
+
+		@Override
+		public Rectangle getBounds()
+		{
+			return bounds;
+		}
+
+		@Override
+		public void setPreferredLocation(Point preferredLocation)
+		{
+			this.preferredLocation = preferredLocation;
+		}
+
+		@Override
+		public void setPreferredSize(Dimension preferredSize)
+		{
+			// fixed-size row of live item sprites; external sizing requests are ignored
+		}
 	}
 
 	/** Only rebuild ore images when sack quantities change. */

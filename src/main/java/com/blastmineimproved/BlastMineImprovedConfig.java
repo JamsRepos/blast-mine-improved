@@ -118,7 +118,7 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = "warningColor",
 		name = "Warning color",
-		description = "Color of the explosion radius warning",
+		description = "Color for explosion radius warnings and other 'needs attention' states, such as a full ore sack",
 		section = overlaysSection,
 		position = 6
 	)
