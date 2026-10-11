@@ -2,6 +2,7 @@ package com.blastmineimproved;
 
 import com.blastmineimproved.overlay.InventoryOreTimerOverlay;
 import com.blastmineimproved.overlay.NextClickOverlay;
+import com.blastmineimproved.overlay.OperatorOverlay;
 import com.blastmineimproved.overlay.RockOverlay;
 import com.blastmineimproved.overlay.StatusOverlay;
 import com.google.inject.Provides;
@@ -15,6 +16,8 @@ import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.NPC;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
@@ -25,6 +28,8 @@ import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.NpcDespawned;
+import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
@@ -54,6 +59,9 @@ public class BlastMineImprovedPlugin extends Plugin
 	@Getter
 	private final Map<WorldPoint, BlastMineRock> rocks = new HashMap<>();
 
+	@Getter
+	private NPC operator;
+
 	@Inject
 	private Client client;
 
@@ -77,6 +85,9 @@ public class BlastMineImprovedPlugin extends Plugin
 
 	@Inject
 	private InventoryOreTimerOverlay inventoryOreTimerOverlay;
+
+	@Inject
+	private OperatorOverlay operatorOverlay;
 
 	@Inject
 	private HelperService helperService;
@@ -107,6 +118,8 @@ public class BlastMineImprovedPlugin extends Plugin
 		overlayManager.add(statusOverlay);
 		overlayManager.add(nextClickOverlay);
 		overlayManager.add(inventoryOreTimerOverlay);
+		overlayManager.add(operatorOverlay);
+		clientThread.invoke(this::findOperatorInScene);
 		log.debug("Jam's Blast Mine started");
 	}
 
@@ -117,7 +130,9 @@ public class BlastMineImprovedPlugin extends Plugin
 		overlayManager.remove(statusOverlay);
 		overlayManager.remove(nextClickOverlay);
 		overlayManager.remove(inventoryOreTimerOverlay);
+		overlayManager.remove(operatorOverlay);
 		rocks.clear();
+		operator = null;
 		oreTracker.reset();
 		groundOreTracker.reset();
 		helperService.resetRotation();
@@ -168,11 +183,48 @@ public class BlastMineImprovedPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onNpcSpawned(NpcSpawned event)
+	{
+		if (MenuSafetyService.isOperator(event.getNpc()))
+		{
+			operator = event.getNpc();
+		}
+	}
+
+	/** NpcSpawned doesn't fire for NPCs already loaded when the plugin is enabled mid-session. */
+	private void findOperatorInScene()
+	{
+		WorldView worldView = client.getTopLevelWorldView();
+		if (worldView == null)
+		{
+			return;
+		}
+		for (NPC npc : worldView.npcs())
+		{
+			if (MenuSafetyService.isOperator(npc))
+			{
+				operator = npc;
+				return;
+			}
+		}
+	}
+
+	@Subscribe
+	public void onNpcDespawned(NpcDespawned event)
+	{
+		if (event.getNpc() == operator)
+		{
+			operator = null;
+		}
+	}
+
+	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
 		if (event.getGameState() == GameState.LOADING)
 		{
 			rocks.clear();
+			operator = null;
 			oreTracker.reset();
 			groundOreTracker.reset();
 			helperService.resetRotation();

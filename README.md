@@ -37,7 +37,7 @@ Also guides:
 |--------|------|
 | Sack | Deposit when inventory ore reaches your trip size |
 | Bank chest | Use noted dynamite on the chest when low / empty |
-| Operator | Collect washed ore (wear prospectors first when sack is full) |
+| Operator | Collect washed ore (with **Require prospector kit** on, Collect is hidden until the full kit is worn) |
 
 Set **Dynamite per trip** and the helper sizes the rest: placeholders are **28 − dynamite − chisel − tinderbox − noted dynamite**, so using noted dynamite on the chest yields exactly that many unnoted.
 
