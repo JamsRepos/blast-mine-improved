@@ -211,7 +211,11 @@ public class MenuSafetyService
 
 	private static boolean isOperator(MenuEntry entry)
 	{
-		NPC npc = entry.getNpc();
+		return isOperator(entry.getNpc());
+	}
+
+	static boolean isOperator(NPC npc)
+	{
 		return npc != null && OPERATOR_NPC_NAME.equals(npc.getName());
 	}
 

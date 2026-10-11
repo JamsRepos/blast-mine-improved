@@ -220,14 +220,14 @@ public interface BlastMineImprovedConfig extends Config
 	@ConfigItem(
 		keyName = "requireProspectors",
 		name = "Require prospector kit",
-		description = "Prompt to wear the full prospector kit before collecting from the operator, for the "
+		description = "Hide Collect on the operator until the full prospector kit is worn, for the "
 			+ "+2.5% Blast Mining XP bonus. Also applied to the sack XP estimate.",
 		section = helperSection,
 		position = 7
 	)
 	default boolean requireProspectors()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
