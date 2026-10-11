@@ -17,6 +17,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
@@ -118,6 +119,7 @@ public class BlastMineImprovedPlugin extends Plugin
 		overlayManager.add(nextClickOverlay);
 		overlayManager.add(inventoryOreTimerOverlay);
 		overlayManager.add(operatorOverlay);
+		clientThread.invoke(this::findOperatorInScene);
 		log.debug("Jam's Blast Mine started");
 	}
 
@@ -186,6 +188,24 @@ public class BlastMineImprovedPlugin extends Plugin
 		if (MenuSafetyService.isOperator(event.getNpc()))
 		{
 			operator = event.getNpc();
+		}
+	}
+
+	/** NpcSpawned doesn't fire for NPCs already loaded when the plugin is enabled mid-session. */
+	private void findOperatorInScene()
+	{
+		WorldView worldView = client.getTopLevelWorldView();
+		if (worldView == null)
+		{
+			return;
+		}
+		for (NPC npc : worldView.npcs())
+		{
+			if (MenuSafetyService.isOperator(npc))
+			{
+				operator = npc;
+				return;
+			}
 		}
 	}
 
