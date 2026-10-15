@@ -17,6 +17,7 @@ primary place a player looks for "what should I do next."
 
 Gear that grants +2.5% Mining XP while Blast Mining: helmet, jacket, legs, boots — four pieces,
 no gloves, no tiers. The golden cosmetic recolor mixes freely with normal pieces for the set
-bonus. A Motherlode Mine reward; RuneLite's gameval `ItemID` names the pieces
+bonus. Varrock armour 4 (`VARROCK_ARMOUR_ELITE`) counts as the jacket only, not the whole kit; the
+wiki names only tier 4 as a substitute. A Motherlode Mine reward; RuneLite's gameval `ItemID` names the pieces
 `MOTHERLODE_REWARD_HAT`/`_TOP`/`_LEGS`/`_BOOTS` (+ `_GOLD`), not anything containing "Prospector"
 or "Lovakengj".
