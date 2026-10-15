@@ -33,9 +33,13 @@ public class HelperService
 	private static final Color WARN_COLOR = new Color(255, 170, 0, 180);
 	private static final Color DEPOSIT_COLOR = new Color(10, 255, 0, 180);
 	private static final Color GUIDE_COLOR = new Color(255, 220, 0, 200);
-	/** Prospector kit: helmet, jacket, legs, boots — no gloves. Golden recolor mixes freely with normal pieces for the set bonus. */
+	/**
+	 * Prospector kit: helmet, jacket, legs, boots — no gloves. Golden recolor mixes freely with normal pieces for the set bonus,
+	 * and Varrock armour 4 (elite diary) stands in for the jacket only.
+	 */
 	private static final int[] PROSPECTOR_HELMS = {ItemID.MOTHERLODE_REWARD_HAT, ItemID.MOTHERLODE_REWARD_HAT_GOLD};
-	private static final int[] PROSPECTOR_BODIES = {ItemID.MOTHERLODE_REWARD_TOP, ItemID.MOTHERLODE_REWARD_TOP_GOLD};
+	private static final int[] PROSPECTOR_BODIES = {
+		ItemID.MOTHERLODE_REWARD_TOP, ItemID.MOTHERLODE_REWARD_TOP_GOLD, ItemID.VARROCK_ARMOUR_ELITE};
 	private static final int[] PROSPECTOR_LEGS = {ItemID.MOTHERLODE_REWARD_LEGS, ItemID.MOTHERLODE_REWARD_LEGS_GOLD};
 	private static final int[] PROSPECTOR_BOOTS = {ItemID.MOTHERLODE_REWARD_BOOTS, ItemID.MOTHERLODE_REWARD_BOOTS_GOLD};
 
